@@ -4,37 +4,39 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import cv2
 import yaml
 
-from annotation import SVS
+from data.svs import SVS
+from data.io import save_thumbnail
 
 
-root = Path("~/data/mie-ortho/pathology").expanduser()
-subject = "57-10"
+def main():
+    root = Path("~/data/mie-ortho/pathology/").expanduser()
+    df = pd.read_csv(root / "list.csv")
 
-with open(root / subject / "data.yml", "r") as f:
-    yml = yaml.safe_load(f)
-    print(yml)
+    print(df)
+    for subject in df['number']:
+        print(subject)
 
-# slide = OpenSlide(str(root / subject / yml["raw"]["svs"]))
-# print("level_count: ", slide.level_count)
-# print("dimensions : ", slide.dimensions)
-# # img = slide.get_thumbnail((512, 512))
-# img = slide.get_thumbnail(slide.dimensions)
-# print(img)
-# img.save("./test.jpg")
+        svs = SVS(root / subject / "image.svs")
+        print(svs.image.slide.dimensions)
 
-svs = SVS(root / subject / yml["raw"]["svs"])
-# print(annot.Vertices)
-img, vtx = svs.get_thumbnail((1024, 1024))
+        # save_thumbnail(svs, f"test-{subject}.jpg")
+        print("Patches")
+        size = 256, 256
+        for i, (p0, p1) in enumerate(svs.patches(size=size, stride=(64, 64))):
+            # print(p0, p1)
+            img, mask = svs.extract_img_mask(p0, size)
 
-print(img.shape)
-print(vtx)
-print(np.max(vtx, axis=0))
+            if np.sum(mask) > 0:
+                print(i, np.sum(mask))
+                base = Path(f"~/data/_out/{i:04}").expanduser()
+                cv2.imwrite(str(base) + "img.jpg", img)
+                cv2.imwrite(str(base) + "mask.jpg", mask)
+        break
 
-for v in vtx:
-    img[v[0]-1:v[0]+1, v[1]-1:v[1]+1, :] = [0, 255, 0]
-# img[vtx] = [255, 0, 0]
 
-cv2.imwrite("test.jpg", img)
+if __name__ == '__main__':
+    main()
