@@ -3,6 +3,7 @@ cycler==0.10.0
 dask==2.22.0
 decorator==4.4.2
 deepdish==0.3.6
+joblib==1.0.0
 kiwisolver==1.2.0
 mahotas==1.4.10
 matplotlib==3.3.0

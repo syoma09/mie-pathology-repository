@@ -5,13 +5,24 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import cv2
+from PIL import Image
+from joblib import Parallel, delayed
 
 from data.svs import SVS
-from data.io import save_thumbnail
 
 
-def save_patches(base, svs: SVS, size, stride):
+def save_patches(path: Path, base, size, stride):
+    """
+
+    :param path:    Path to image.svs
+    :param base:    Base string of output file name
+    :param size:    Patch size
+    :param stride:  Patch stride
+    :return:        None
+    """
+
+    svs = SVS(path)
+
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
         # print(p0, p1)
         img, mask = svs.extract_img_mask(p0, size)
@@ -19,8 +30,8 @@ def save_patches(base, svs: SVS, size, stride):
         if np.sum(mask) == size[0] * size[1] * 255:
             print(i, np.sum(mask))
 
-            cv2.imwrite(str(base) + f"{i:08}img.jpg", img)
-            cv2.imwrite(str(base) + f"{i:08}mask.jpg", mask)
+            img.save(str(base) + f"{i:08}img.png")
+            # Image.fromarray(mask).save(str(base) + f"{i:08}mask.png")
 
 
 def main():
@@ -33,24 +44,32 @@ def main():
     (dst / "0").mkdir(exist_ok=True)
     (dst / "1").mkdir(exist_ok=True)
 
-    for df_row in df.iterrows():
-        subject = df_row['subject']
-        survive = df_row['survival']
+    args = []
+    for _, row in df.iterrows():
+        subject = row['number']
+        survive = row['survival']
 
         print(subject)
 
-        svs = SVS(src / subject / "image.svs")
         # print(svs.image.slide.dimensions)
 
         # save_thumbnail(svs, str(dst / f"test-{subject}.jpg"))
         # save_thumbnail(svs, f"test-{subject}.jpg")
 
-        save_patches(
-            str(dst / survive / f"{subject}_"),
-            svs, size=(256, 256), stride=(256, 256)
-        )
+        path = src / subject / "image.svs"
+        base = dst / str(survive) / f"{subject}_"
+        size = 256, 256
+        stride = size
+        args.append((path, base, size, stride))
 
-        break
+        # # Serial execution
+        # save_patches(path, base, size=size, stride=stride)
+
+    # Parallel execution
+    Parallel(n_jobs=16)([
+        delayed(save_patches)(path, base, size, stride)
+        for path, base, size, stride in args
+    ])
 
 
 if __name__ == '__main__':

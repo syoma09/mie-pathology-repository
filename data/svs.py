@@ -73,9 +73,7 @@ class SVS(object):
         :param size:
         :return:
         """
-        img = np.array(
-            self.image.slide.read_region(location, 0, size)
-        )
+        img = self.image.slide.read_region(location, 0, size)
 
         mask = self.mask.crop(box=(
             location[0],
