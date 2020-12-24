@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import random
 from pathlib import Path
 
 import torch.utils.data
@@ -22,15 +23,14 @@ class PatchDataset(torch.utils.data.Dataset):
         # print(self.classes)
 
         self.files = []
-        for cls in self.classes:
-            self.files.append(
-                [f for f in (root / cls).iterdir()]
-            )
-
-        self.__len = sum(len(data) for data in self.files)
+        for cls, name in enumerate(self.classes):
+            self.files += [
+                (f, cls) for f in (root / name).iterdir()
+            ]
+        random.shuffle(self.files)  # Random shuffle
 
     def __len__(self):
-        return self.__len
+        return len(self.files)
 
     def __getitem__(self, item):
         """
@@ -38,9 +38,11 @@ class PatchDataset(torch.utils.data.Dataset):
         :return:        Return tuple of (image, label)
                         Label is always "10" <= MetricLearning
         """
-        path = self.files[0][0]
+        if item > len(self):
+            item %= len(self)
+
+        path, label = self.files[item]
         img = Image.open(path).convert('RGB')
-        label = 0
 
         # Apply image pre-processing
         img = self.transform(img)
