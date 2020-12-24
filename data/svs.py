@@ -9,10 +9,6 @@ from PIL import Image, ImageDraw
 from openslide import OpenSlide
 
 
-# class SVSRegion(object):
-#     def __init__(self):
-
-
 class SVS(object):
     zoom = 1.0
 
@@ -31,15 +27,23 @@ class SVS(object):
 
         self.mask = self.__create_mask(
             self.image.slide.dimensions,
-            self.annotation.Vertices
+            [(x, y) for x, y in self.annotation.Vertices]
         )
 
     @staticmethod
     def __create_mask(shape, polygon):
-        mask = Image.new("1", shape, 0)
-        ImageDraw.Draw(mask).polygon(polygon, fill=1)
+        """
+        Mask iamge requires about 20GiB RAM.
 
-        # WARNING: This conversion requires much memory
+        :param shape:
+        :param polygon:
+        :return:
+        """
+        mask = Image.new("1", shape, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.polygon(polygon, fill=1)
+
+        # WARNING: This conversion requires 8 times larger RAM
         # mask = np.array(mask, dtype=bool)
 
         return mask
@@ -49,7 +53,7 @@ class SVS(object):
         zoom = min(shape[0] / dims[0], shape[1] / dims[1])
 
         # Convert PIL image to Numpy array, swap X and Y axes
-        image = np.array(self.image.slide.get_thumbnail(shape)) #.transpose(1, 0, 2)
+        image = self.image.slide.get_thumbnail(shape)
         # Multiply image zoom ratio to fit the annotation vertices to resized image
         annot = (self.annotation.Vertices * zoom).astype(np.int)
 
@@ -63,6 +67,12 @@ class SVS(object):
                 yield (i, j), (i + size[0], j + size[1])
 
     def extract_img_mask(self, location, size):
+        """
+        Return image and mask at given location + size
+        :param location:
+        :param size:
+        :return:
+        """
         img = np.array(
             self.image.slide.read_region(location, 0, size)
         )
@@ -97,7 +107,7 @@ class SVSAnnotation(object):
 
         self._microns_per_pixel = root.attrib["MicronsPerPixel"]
         self._vertices = np.array([
-            [int(v.attrib["Y"]), int(v.attrib["X"])]    #, int(v.attrib["Z"])] # Ignore Z
+            [int(v.attrib["X"]), int(v.attrib["Y"])]    #, int(v.attrib["Z"])] # Ignore Z
             for v in root.find("Annotation").find("Regions").find("Region").find("Vertices").findall("Vertex")
         ])
 
