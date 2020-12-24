@@ -8,12 +8,11 @@ mahotas==1.4.10
 matplotlib==3.3.0
 networkx==2.4
 numexpr==2.7.1
-numpy==1.19.1
+numpy==1.16.2
 opencv-python==4.1.2.30
 openslide-python==1.1.1
 pandas==1.1.0
-Pillow==7.2.0
-pkg-resources==0.0.0
+Pillow==7.0.0
 pycontour==1.4.0
 pydaily==0.4.2
 pyparsing==2.4.7
@@ -28,3 +27,6 @@ Shapely==1.6.4
 six==1.15.0
 tables==3.6.1
 toolz==0.10.0
+torch==1.7.1+cu110
+torchvision==0.8.2+cu110
+typing-extensions==3.7.4.3

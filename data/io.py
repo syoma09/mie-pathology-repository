@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import numpy as np
-import cv2
+from PIL import ImageDraw
 
 from data.svs import SVS
 
 
 def save_thumbnail(svs: SVS, path):
     img, vtx = svs.get_thumbnail((1024, 1024))
+    # Convert to list of tuple
+    vtx = [(x, y) for [x, y] in vtx]
 
-    print(img.shape)
-    print(vtx)
-    print(np.max(vtx, axis=0))
+    # print(img.size)
+    # print(vtx)
 
-    for v in vtx:
-        img[v[0] - 1:v[0] + 1, v[1] - 1:v[1] + 1, :] = [0, 255, 0]
-    # img[vtx] = [255, 0, 0]
+    draw = ImageDraw.Draw(img)
+    # draw.polygon(vtx, fill=(0, 0, 0), outline=(0, 0, 0))
+    # draw.polygon(vtx, outline=(0, 255, 0))
 
-    cv2.imwrite(path, img)
+    x0, y0 = vtx[0]
+    for x, y in vtx:
+        print(x, y)
+        # draw.point((x, y), fill=(0, 255, 0))
+        draw.line([(x0, y0), (x, y)], fill=(0, 0, 255), width=3)
+        x0, y0 = x, y
+
+    img.save(path)
