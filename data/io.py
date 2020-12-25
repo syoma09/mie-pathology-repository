@@ -20,7 +20,7 @@ def save_thumbnail(svs: SVS, path):
 
     x0, y0 = vtx[0]
     for x, y in vtx:
-        print(x, y)
+        # print(x, y)
         # draw.point((x, y), fill=(0, 255, 0))
         draw.line([(x0, y0), (x, y)], fill=(0, 0, 255), width=3)
         x0, y0 = x, y
