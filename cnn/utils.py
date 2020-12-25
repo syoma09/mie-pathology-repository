@@ -16,7 +16,7 @@ class PatchDataset(torch.utils.data.Dataset):
         self.transform = torchvision.transforms.Compose([
             # torchvision.transforms.Resize((224, 224)),
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(0.5, 0.5)
+            # torchvision.transforms.Normalize(0.5, 0.5)
         ])
 
         self.classes = [d for d in root.iterdir()]
@@ -27,6 +27,7 @@ class PatchDataset(torch.utils.data.Dataset):
             self.files += [
                 (f, cls) for f in (root / name).iterdir()
             ]
+            print(name, len(self.files))
         random.shuffle(self.files)  # Random shuffle
 
     def __len__(self):
@@ -38,6 +39,7 @@ class PatchDataset(torch.utils.data.Dataset):
         :return:        Return tuple of (image, label)
                         Label is always "10" <= MetricLearning
         """
+
         if item > len(self):
             item %= len(self)
 
@@ -45,7 +47,7 @@ class PatchDataset(torch.utils.data.Dataset):
         img = Image.open(path).convert('RGB')
 
         # Apply image pre-processing
-        img = self.transform(img)
+        img = self.transform(img)   # / 255.
         # print(img.shape)
 
         # label = torch.scalar_tensor(label, dtype=torch.int64)
