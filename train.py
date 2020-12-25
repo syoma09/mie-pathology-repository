@@ -4,6 +4,7 @@
 import torch
 import torch.nn as nn
 import torch.utils.data
+from torch.utils.tensorboard import SummaryWriter
 import torchvision
 from pathlib import Path
 
@@ -18,6 +19,7 @@ def main():
 
     root = Path("~/data/_out/").expanduser()
 
+    epochs = 10000
     batch_size = 64    # Requires 19 GiB VRAM
 
     # データ読み込み
@@ -47,13 +49,13 @@ def main():
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    epochs = 5
+    tensorboard = SummaryWriter(log_dir='./logs')
     for epoch in range(epochs):
         print(f"Epoch [{epoch:04}/{epochs:04}]:")
         # Switch model to training mode
         model.train()
 
-        for x, y_true in train_loader:
+        for batch, (x, y_true) in enumerate(train_loader):
             x, y_true = x.cuda(), y_true.cuda()
 
             y_pred = model(x)   # Forward
@@ -61,6 +63,7 @@ def main():
 
             loss = criterion(y_pred, y_true)  # Calculate training loss
             print("  ", loss.item())
+            tensorboard.add_scalar('train_loss', loss.item(), epoch * batch_size + batch)
 
             loss.backward()     # Backward propagation
             optimizer.step()    # Update parameters
