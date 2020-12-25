@@ -41,23 +41,30 @@ def main():
     df = pd.read_csv(src / "list.csv")
     print(df)
 
-    (dst / "0").mkdir(exist_ok=True)
-    (dst / "1").mkdir(exist_ok=True)
+    (dst / 'train' / '0').mkdir(parents=True, exist_ok=True)
+    (dst / 'train' / '1').mkdir(parents=True, exist_ok=True)
+    (dst / 'valid' / '0').mkdir(parents=True, exist_ok=True)
+    (dst / 'valid' / '1').mkdir(parents=True, exist_ok=True)
 
     args = []
     for _, row in df.iterrows():
         subject = row['number']
         survive = row['survival']
+        dataset = [
+            False,      # use==0: Ignore
+            'train',    # use==1: Use as training data
+            'valid'     # use==2: Use as validation data
+        ][int(row['use'])]
+
+        if not dataset:
+            continue
 
         print(subject)
 
         # print(svs.image.slide.dimensions)
 
-        # save_thumbnail(svs, str(dst / f"test-{subject}.jpg"))
-        # save_thumbnail(svs, f"test-{subject}.jpg")
-
         path = src / subject / "image.svs"
-        base = dst / str(survive) / f"{subject}_"
+        base = dst / dataset / str(survive) / f"{subject}_"
         size = 256, 256
         stride = size
         args.append((path, base, size, stride))
