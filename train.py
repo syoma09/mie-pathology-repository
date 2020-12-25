@@ -18,23 +18,18 @@ def main():
 
     root = Path("~/data/_out/").expanduser()
 
-    # # patch_dataset[z,x,y,]
-    # patch_dataset = PatchDataset(root / "affect_data")
-    # valid_dataset = PatchDataset(root / "valid_data")
-    # print(len(patch_dataset))
+    batch_size = 64    # Requires 19 GiB VRAM
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(root), batch_size=32, shuffle=True
+        PatchDataset(root), batch_size=batch_size, shuffle=True
     )
-    # test_dataloader = torch.utils.data.DataLoader(
-    #     valid_dataset, batch_size=3, shuffle=False
-    # )
 
     '''
     モデルの構築
     '''
-    model = torchvision.models.resnet50(pretrained=True)
+    model = torchvision.models.resnet152(pretrained=True)
+    # model = torchvision.models.resnet50(pretrained=True)
     print(model)
 
     # Replace FC layer
@@ -59,8 +54,6 @@ def main():
         model.train()
 
         for x, y_true in train_loader:
-            if y_true.shape == torch.Size([1]):
-                continue
             x, y_true = x.cuda(), y_true.cuda()
 
             y_pred = model(x)   # Forward
@@ -68,6 +61,7 @@ def main():
 
             loss = criterion(y_pred, y_true)  # Calculate training loss
             print("  ", loss.item())
+
             loss.backward()     # Backward propagation
             optimizer.step()    # Update parameters
 
