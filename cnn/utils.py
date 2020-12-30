@@ -30,6 +30,8 @@ class PatchDataset(torch.utils.data.Dataset):
             print(name, len(self.files))
         random.shuffle(self.files)  # Random shuffle
 
+        # self.files = self.files[:10000]
+
     def __len__(self):
         return len(self.files)
 
@@ -50,8 +52,7 @@ class PatchDataset(torch.utils.data.Dataset):
         img = self.transform(img)   # / 255.
         # print(img.shape)
 
-        # label = torch.scalar_tensor(label, dtype=torch.int64)
-        label = to1hot(label, 2)
+        # label = to1hot(label, 2)
 
         return img, label
 
