@@ -73,7 +73,7 @@ def main():
         # save_patches(path, base, size=size, stride=stride)
 
     # Parallel execution
-    Parallel(n_jobs=16)([
+    Parallel(n_jobs=12)([
         delayed(save_patches)(path, base, size, stride)
         for path, base, size, stride in args
     ])
