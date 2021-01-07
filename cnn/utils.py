@@ -19,8 +19,9 @@ class PatchDataset(torch.utils.data.Dataset):
             # torchvision.transforms.Normalize(0.5, 0.5)
         ])
 
-        self.classes = [d for d in root.iterdir()]
+        # self.classes = [d for d in root.iterdir()]
         # print(self.classes)
+        self.classes = ["0", "1"]
 
         self.files = []
         for cls, name in enumerate(self.classes):
@@ -28,9 +29,10 @@ class PatchDataset(torch.utils.data.Dataset):
                 (f, cls) for f in (root / name).iterdir()
             ]
             print(name, len(self.files))
+
         random.shuffle(self.files)  # Random shuffle
 
-        # self.files = self.files[:10000]
+        # self.files = self.files[:5120]
 
     def __len__(self):
         return len(self.files)

@@ -37,6 +37,11 @@ class ConfusionMatrix(object):
 
         return result
 
+    def __str__(self):
+        return "TP={:7} FN={:7}\nFP={:7} TN={:7}".format(
+            self.tp, self.fn, self.fp, self.tn
+        )
+
     @property
     def tp(self):
         return self._mat[1, 1]
@@ -60,15 +65,15 @@ class ConfusionMatrix(object):
         return (self.tp + self.tn) / (self.tp + self.fp + self.fn + self.tn)
 
     def precision(self):
-        return self.tp / (self.tp + self.fp)
+        return self.tp / (self.tp + self.fp + 1e-8)
 
     def recall(self):
-        return self.tp / (self.tp + self.fn)
+        return self.tp / (self.tp + self.fn + 1e-8)
 
     def f1(self):
         p = self.precision()
         r = self.recall()
-        return 2 * p * r / (p + r)
+        return 2 * p * r / (p + r + 1e-8)
 
 
 # class Accuracy(ConfusionMatrix):
