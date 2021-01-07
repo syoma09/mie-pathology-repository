@@ -1,40 +1,47 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
+import datetime
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.utils.data
-from torch.utils.tensorboard import SummaryWriter
 import torchvision
-from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
+from torch.backends import cudnn
 
 from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
 
-# np.random.seed(1234)
-# torch.manual_seed(1234)
+device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
+if torch.cuda.is_available():
+    cudnn.benchmark = True
 
 
 def main():
-    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     root = Path("~/data/_out/").expanduser()
 
     epochs = 10000
-    batch_size = 64    # Requires 19 GiB VRAM
+    batch_size = 32     # 64 requires 19 GiB VRAM
+    num_workers = os.cpu_count() // 2   # For SMT
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'train'), batch_size=batch_size, shuffle=True
+        PatchDataset(root / 'train'), batch_size=batch_size, shuffle=True,
+        num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'valid'), batch_size=16
+        PatchDataset(root / 'valid'), batch_size=batch_size,
+        num_workers=num_workers
     )
 
     '''
     モデルの構築
     '''
-    model = torchvision.models.resnet152(pretrained=False)
+    # model = torchvision.models.resnet152(pretrained=False)
+    model = torchvision.models.resnet152(pretrained=True)
     # model = torchvision.models.resnet50(pretrained=True)
     # print(model)
 
@@ -46,8 +53,7 @@ def main():
         # nn.Softmax(dim=1)
         # nn.Sigmoid()
     )
-    # Use GPU
-    model = model.cuda()
+    model = model.to(device)
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -56,16 +62,20 @@ def main():
     # criterion = nn.BCELoss()
 
     tensorboard = SummaryWriter(log_dir='./logs')
-
+    model_name = "{}model".format(
+        datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
+    )
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
 
         # Switch to training mode
         model.train()
-        for batch, (x, y_true) in enumerate(train_loader):
-            # break
-            x, y_true = x.cuda(), y_true.cuda()
 
+        train_loss = 0.
+        for batch, (x, y_true) in enumerate(train_loader):
+            optimizer.zero_grad()
+
+            x, y_true = x.to(device), y_true.to(device)
             y_pred = model(x)   # Forward
             # print("yp:", y_pred)
 
@@ -74,10 +84,7 @@ def main():
             optimizer.step()    # Update parameters
 
             # Logging
-            # print("\033[2K\033[G")  # Clean current line
-
-            # progress = ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30]
-            # print("\r  Batch({batch:6}/{len(train_loader):6})[{progress}]: {loss.item():.4}".format(
+            train_loss += loss.item() / len(train_loader)
             print("\r  Batch({:6}/{:6})[{}]: loss={:.4}".format(
                 batch, len(train_loader),
                 ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
@@ -87,6 +94,8 @@ def main():
                 'train_loss', loss.item(), epoch * batch_size + batch
             )
         print('')
+        print('    Saving model...')
+        torch.save(model.state_dict(), root / f"{model_name}{epoch:05}.pth")
 
         # Switch to evaluation mode
         model.eval()
@@ -94,26 +103,45 @@ def main():
 
         # Initialize validation metric values
         metrics = {
-            'loss': 0,
-            'cmat': ConfusionMatrix(None, None)
+            'train': {
+                'loss': 0.,
+                'cmat': ConfusionMatrix(None, None)
+            }, 'valid': {
+                'loss': 0.,
+                'cmat': ConfusionMatrix(None, None)
+            }
         }
         # Calculate validation metrics
-        for x, y_true in valid_loader:
-            x, y_true = x.cuda(), y_true.cuda()
-            y_pred = model(x)  # Prediction
+        with torch.no_grad():
+            for x, y_true in valid_loader:
+                x, y_true = x.to(device), y_true.to(device)
+                y_pred = model(x)  # Prediction
 
-            loss = criterion(y_pred, y_true)  # Calculate validation loss
-            metrics['loss'] += loss.item() / len(valid_loader)
-            metrics['cmat'] += ConfusionMatrix(y_pred, y_true)
+                loss = criterion(y_pred, y_true)  # Calculate validation loss
+                # print(loss.item())
+                metrics['valid']['loss'] += loss.item() / len(valid_loader)
+                metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
+
+            for x, y_true in train_loader:
+                x, y_true = x.to(device), y_true.to(device)
+                y_pred = model(x)  # Prediction
+
+                metrics['train']['loss'] += criterion(y_pred, y_true).item() / len(train_loader)
+                metrics['train']['cmat'] += ConfusionMatrix(y_pred, y_true)
 
         # Console write
-        print("    valid_loss: {:3.3}".format(metrics['loss']))
-        print("    valid_acc : {:3.3}".format(metrics['cmat'].accuracy()))
-        print("    valid_f1  : {:3.3}".format(metrics['cmat'].f1()))
+        print("    train loss: {:3.3}".format(metrics['train']['loss']))
+        print("          acc : {:3.3}".format(metrics['train']['cmat'].accuracy()))
+        print("          f1  : {:3.3}".format(metrics['train']['cmat'].f1()))
+        print("    valid loss: {:3.3}".format(metrics['valid']['loss']))
+        print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
+        print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
+        print("        Matrix:")
+        print(metrics['valid']['cmat'])
         # Write tensorboard
-        tensorboard.add_scalar('valid_loss', metrics['loss'], epoch)
-        tensorboard.add_scalar('valid_acc', metrics['cmat'].accuracy(), epoch)
-        tensorboard.add_scalar('valid_f1', metrics['cmat'].f1(), epoch)
+        tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
+        tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
+        tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 
 
 if __name__ == '__main__':

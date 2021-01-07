@@ -11,13 +11,14 @@ from joblib import Parallel, delayed
 from data.svs import SVS
 
 
-def save_patches(path: Path, base, size, stride):
+def save_patches(path: Path, base, size, stride, resize=None):
     """
 
     :param path:    Path to image.svs
     :param base:    Base string of output file name
     :param size:    Patch size
     :param stride:  Patch stride
+    :param resize:  Resize extracted patch
     :return:        None
     """
 
@@ -29,6 +30,9 @@ def save_patches(path: Path, base, size, stride):
 
         if np.sum(mask) == size[0] * size[1] * 255:
             print(i, np.sum(mask))
+
+            if resize is not None:
+                img = img.resize(resize)
 
             img.save(str(base) + f"{i:08}img.png")
             # Image.fromarray(mask).save(str(base) + f"{i:08}mask.png")
@@ -65,17 +69,18 @@ def main():
 
         path = src / subject / "image.svs"
         base = dst / dataset / str(survive) / f"{subject}_"
-        size = 256, 256
+        size = 512, 512
         stride = size
-        args.append((path, base, size, stride))
+        resize = 256, 256
+        args.append((path, base, size, stride, resize))
 
         # # Serial execution
         # save_patches(path, base, size=size, stride=stride)
 
     # Parallel execution
     Parallel(n_jobs=12)([
-        delayed(save_patches)(path, base, size, stride)
-        for path, base, size, stride in args
+        delayed(save_patches)(path, base, size, stride, resize)
+        for path, base, size, stride, resize in args
     ])
 
 
