@@ -25,16 +25,19 @@ def save_patches(path: Path, base, size, stride, resize=None):
     svs = SVS(path)
 
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
+        patch_path = str(base) + f"{i:08}img.png"
+        if Path(patch_path).exists():
+            continue
+
         # print(p0, p1)
         img, mask = svs.extract_img_mask(p0, size)
 
         if np.sum(mask) == size[0] * size[1] * 255:
-            print(i, np.sum(mask))
-
             if resize is not None:
                 img = img.resize(resize)
 
-            img.save(str(base) + f"{i:08}img.png")
+            print(patch_path)
+            img.save(patch_path)
             # Image.fromarray(mask).save(str(base) + f"{i:08}mask.png")
 
 
