@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import re
 import random
 from pathlib import Path
 
@@ -24,9 +25,11 @@ class PatchDataset(torch.utils.data.Dataset):
         self.classes = ["0", "1"]
 
         self.files = []
+        # ptn = re.compile(r"^.+57-10.+\.png$")
         for cls, name in enumerate(self.classes):
             self.files += [
                 (f, cls) for f in (root / name).iterdir()
+                # if ptn.match(str(f))
             ]
             print(name, len(self.files))
 

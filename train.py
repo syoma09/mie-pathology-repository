@@ -15,7 +15,7 @@ from torch.backends import cudnn
 from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
 
-device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
@@ -139,6 +139,7 @@ def main():
         print("        Matrix:")
         print(metrics['valid']['cmat'])
         # Write tensorboard
+        tensorboard.add_scalar('train_loss', train_loss, epoch)
         tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
         tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
