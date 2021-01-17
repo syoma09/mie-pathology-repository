@@ -6,17 +6,19 @@
         - [Repository - GDC Data Portal](https://portal.gdc.cancer.gov/repository?facetTab=files&filters={"op"%3A"and"%2C"content"%3A[{"op"%3A"in"%2C"content"%3A{"field"%3A"files.data_type"%2C"value"%3A["Slide Image"]}}]})あたり?
 
 ### Private dataset
-Header:
-
-| 項目          | 内容 |
-| :------------ | :--- |
-| use           | 0:使用しない、1:学習データ、2:評価データ |
-| number        | 被験者番号 |
-| 転帰          | とりあえず今は気にしない |
-| survival      | 1:生存、0:死亡 |
-| survival time | 単位は月 |
-| event         | |
-| event time    | |
+- Header:
+    - use:
+        - 0: 使用しない
+        - 1: 学習データ
+        - 2: 評価データ
+    - number: 被験者番号
+    - 転帰: とりあえず今は気にしない
+    - survival
+        - 1: 生存、0:死亡
+    - survival time: 単位は月
+    - event:
+        - naは評価不能または最初からイベントが発生済み
+    - event time
 
 
 ## Code
