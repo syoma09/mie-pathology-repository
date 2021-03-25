@@ -8,6 +8,7 @@ from pathlib import Path
 import torch.utils.data
 import torchvision
 from PIL import Image
+from PIL import ImageOps
 
 
 class PatchDataset(torch.utils.data.Dataset):
@@ -25,11 +26,11 @@ class PatchDataset(torch.utils.data.Dataset):
         self.classes = ["0", "1"]
 
         self.files = []
-        # ptn = re.compile(r"^.+57-10.+\.png$")
+        ptn = re.compile(r"^.+57-10.+\.png$")
         for cls, name in enumerate(self.classes):
             self.files += [
                 (f, cls) for f in (root / name).iterdir()
-                # if ptn.match(str(f))
+                if ptn.match(str(f))
             ]
             print(name, len(self.files))
 
@@ -54,7 +55,7 @@ class PatchDataset(torch.utils.data.Dataset):
         img = Image.open(path).convert('RGB')
 
         # Apply image pre-processing
-        img = self.transform(img)   # / 255.
+        img = self.transform(ImageOps.mirror(img))   # / 255.
         # print(img.shape)
 
         # label = to1hot(label, 2)

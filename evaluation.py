@@ -13,7 +13,7 @@ from torch.backends import cudnn
 from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
 
-device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 print(device)
