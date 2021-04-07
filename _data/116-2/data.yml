@@ -1,0 +1,12 @@
+image:
+  svs: "image.svs"
+  xml: "image.xml"
+# 116-2	CDF	0	36.19672131	0	36.19672131
+annotation:
+  outcome: "CDF"
+  survival:
+    flag: 0
+    time: 36.19672131
+  event:
+    flag: 0
+    time: 36.19672131

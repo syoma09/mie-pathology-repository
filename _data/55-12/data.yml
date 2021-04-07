@@ -1,0 +1,12 @@
+image:
+  svs: "image.svs"
+  xml: "image.xml"
+# 55-12	DOD	1	38.78688525	1	2.491803279
+annotation:
+  outcome: "DOD"
+  survival:
+    flag: 1
+    time: 38.78688525
+  event:
+    flag: 1
+    time: 2.491803279
