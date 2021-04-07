@@ -1,0 +1,12 @@
+image:
+  svs: "image.svs"
+  xml: "image.xml"
+# 115-12	AWD	0	58.8852459	1	41.96721311
+annotation:
+  outcome: "AWD"
+  survival:
+    flag: 0
+    time: 58.8852459
+  event:
+    flag: 1
+    time: 41.96721311
