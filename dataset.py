@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,19 @@ from PIL import Image
 from joblib import Parallel, delayed
 
 from data.svs import SVS
+
+
+# Check RAM capacity
+with open('/proc/meminfo', 'r') as f:
+    mem_total_str = [line for line in f.readlines() if line.startswith('MemTotal')]
+    mem_total = re.findall(r'[0-9]+', mem_total_str[0])[0]
+    mem_total = int(mem_total) / 1024 / 1024  # kB -> mB -> gB
+    mem_total -= 4  # Keep 4GB for system
+    print(mem_total)
+
+# Approx., 1 thread use 20GB
+n_jobs = int(mem_total / 20)
+print(f'Process in {n_jobs} threads.')
 
 
 def save_patches(path: Path, base, size, stride, resize=None):
@@ -40,6 +54,8 @@ def save_patches(path: Path, base, size, stride, resize=None):
             print(patch_path)
             img.save(patch_path)
             # Image.fromarray(mask).save(str(base) + f"{i:08}mask.png")
+
+    del svs
 
 
 def create_survival():
@@ -82,7 +98,7 @@ def create_survival():
         # save_patches(path, base, size=size, stride=stride)
 
     # Parallel execution
-    Parallel(n_jobs=12)([
+    Parallel(n_jobs=n_jobs)([
         delayed(save_patches)(path, base, size, stride, resize)
         for path, base, size, stride, resize in args
     ])
@@ -133,7 +149,7 @@ def create_time():
             # save_patches(path, base, size=size, stride=stride)
 
     # Parallel execution
-    Parallel(n_jobs=12)([
+    Parallel(n_jobs=n_jobs)([
         delayed(save_patches)(path, base, size, stride, resize)
         for path, base, size, stride, resize in args
     ])

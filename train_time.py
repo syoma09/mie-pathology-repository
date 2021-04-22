@@ -11,12 +11,16 @@ import torch.utils.data
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
+from PIL import ImageFile
 
 from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
 
+# To avoid "OSError: image file is truncated"
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:0'
+device = 'cuda:1'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
@@ -146,29 +150,29 @@ def main():
                 loss = criterion(y_pred, y_true)  # Calculate validation loss
                 # print(loss.item())
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
-                metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
+                # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
 
             for x, y_true in train_loader:
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
 
                 metrics['train']['loss'] += criterion(y_pred, y_true).item() / len(train_loader)
-                metrics['train']['cmat'] += ConfusionMatrix(y_pred, y_true)
+                # metrics['train']['cmat'] += ConfusionMatrix(y_pred, y_true)
 
-        # Console write
-        print("    train loss: {:3.3}".format(metrics['train']['loss']))
-        print("          acc : {:3.3}".format(metrics['train']['cmat'].accuracy()))
-        print("          f1  : {:3.3}".format(metrics['train']['cmat'].f1()))
-        print("    valid loss: {:3.3}".format(metrics['valid']['loss']))
-        print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
-        print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
-        print("        Matrix:")
-        print(metrics['valid']['cmat'])
+        # # Console write
+        # print("    train loss: {:3.3}".format(metrics['train']['loss']))
+        # print("          acc : {:3.3}".format(metrics['train']['cmat'].accuracy()))
+        # print("          f1  : {:3.3}".format(metrics['train']['cmat'].f1()))
+        # print("    valid loss: {:3.3}".format(metrics['valid']['loss']))
+        # print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
+        # print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
+        # print("        Matrix:")
+        # print(metrics['valid']['cmat'])
         # Write tensorboard
         tensorboard.add_scalar('train_loss', train_loss, epoch)
         tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
-        tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
-        tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
+        # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
+        # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 
 
 if __name__ == '__main__':
