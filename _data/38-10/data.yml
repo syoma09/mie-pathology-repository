@@ -1,0 +1,12 @@
+image:
+  svs: "38-10.svs"
+  xml: "38-10.xml"
+# 62-2	CDF	0	30.49180328	0	30.49180328
+# annotation:
+#   outcome: "CDF"
+#   survival:
+#     flag: 0
+#     time: 30.49180328
+#   event:
+#     flag: 0
+#     time: 30.49180328

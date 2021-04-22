@@ -1,0 +1,12 @@
+image:
+  svs: "119-14,15.svs"
+  xml: "119-14,15.xml"
+# 62-2	CDF	0	30.49180328	0	30.49180328
+# annotation:
+#   outcome: "CDF"
+#   survival:
+#     flag: 0
+#     time: 30.49180328
+#   event:
+#     flag: 0
+#     time: 30.49180328
