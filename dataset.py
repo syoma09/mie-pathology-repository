@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import shutil
 import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
-from PIL import Image
 from joblib import Parallel, delayed
 
 from data.svs import SVS
@@ -26,18 +25,22 @@ n_jobs = int(mem_total / 20)
 print(f'Process in {n_jobs} threads.')
 
 
-def save_patches(path: Path, base, size, stride, resize=None):
+def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None):
     """
 
-    :param path:    Path to image.svs
-    :param base:    Base string of output file name
-    :param size:    Patch size
-    :param stride:  Patch stride
-    :param resize:  Resize extracted patch
+    :param path_svs:    Path to image svs
+    :param path_xml:    Path to contour xml
+    :param base:        Base string of output file name
+    :param size:        Patch size
+    :param stride:      Patch stride
+    :param resize:      Resize extracted patch
     :return:        None
     """
 
-    svs = SVS(path)
+    svs = SVS(
+        path_svs,
+        annotation=path_xml
+    )
 
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
         patch_path = str(base) + f"{i:08}img.png"
@@ -58,103 +61,45 @@ def save_patches(path: Path, base, size, stride, resize=None):
     del svs
 
 
-def create_survival():
-    src = Path("~/data/mie-ortho/pathology/").expanduser()
-    dst = Path("~/data/_out/").expanduser()
+def create():
+    src = Path("~/workspace/mie-pathology/_data/").expanduser()
+    dst = Path("~/data/_out/mie-pathology/").expanduser()
 
-    df = pd.read_csv(src / "list.csv")
+    # Load annotation
+    df = pd.read_csv(src / "AIpatho.csv")
     print(df)
 
-    (dst / 'train' / '0').mkdir(parents=True, exist_ok=True)
-    (dst / 'train' / '1').mkdir(parents=True, exist_ok=True)
-    (dst / 'valid' / '0').mkdir(parents=True, exist_ok=True)
-    (dst / 'valid' / '1').mkdir(parents=True, exist_ok=True)
-
     args = []
-    for _, row in df.iterrows():
-        subject = row['number']
-        survive = row['survival']
-        dataset = [
-            False,      # use==0: Ignore
-            'train',    # use==1: Use as training data
-            'valid'     # use==2: Use as validation data
-        ][int(row['use'])]
+    for _, subject in df.iterrows():
+        number = subject['number']
 
-        if not dataset:
-            continue
+        subject_dir = dst / number
+        # if subject_dir.exists():
+        #     shutil.rmtree(subject_dir)
+        subject_dir.mkdir(parents=True, exist_ok=True)
 
-        print(subject)
-
-        # print(svs.image.slide.dimensions)
-
-        path = src / subject / "image.svs"
-        base = dst / dataset / str(survive) / f"{subject}_"
+        path_svs = src / "svs" / f"{number}.svs"
+        path_xml = src / "xml" / f"{number}.xml"
+        base = dst / f"{number}" / "s{}_st{}_e{}_et{}_".format(
+            subject['survival'],
+            subject['survival time'],
+            subject['event'],
+            subject['event time']
+        )
         size = 512, 512
         stride = size
         resize = 256, 256
-        args.append((path, base, size, stride, resize))
+        args.append((path_svs, path_xml, base, size, stride, resize))
 
         # # Serial execution
-        # save_patches(path, base, size=size, stride=stride)
+        # save_patches(path_svs, path_xml, base, size=size, stride=stride)
 
     # Parallel execution
     Parallel(n_jobs=n_jobs)([
-        delayed(save_patches)(path, base, size, stride, resize)
-        for path, base, size, stride, resize in args
-    ])
-
-
-def create_time():
-    src = Path("~/workspace/mie-pathology/_data/").expanduser()
-    dst = Path("~/data/_out/").expanduser()
-
-    with open(src / 'survival_time.yml', 'r') as f:
-        dataset = yaml.safe_load(f)
-        print(dataset)
-
-    time_periods = [
-        lambda t:       t < 12,
-        lambda t: 12 <= t < 36,
-        lambda t: 36 <= t
-    ]
-    for i, _ in enumerate(time_periods):
-        (dst / 'train' / str(i)).mkdir(parents=True, exist_ok=True)
-        (dst / 'valid' / str(i)).mkdir(parents=True, exist_ok=True)
-
-    args = []
-    for use, subjects in dataset.items():
-        print(f"Processing \"{use}\" dataset.")
-
-        for subject in subjects:
-            with open(src / subject / 'data.yml') as f:
-                yml = yaml.safe_load(f)
-
-            s_time = float(yml['annotation']['survival']['time'])
-            # Convert time to class
-            for i, period in enumerate(time_periods):
-                if period(s_time):
-                    s_time = i
-                    break
-
-            # print(svs.image.slide.dimensions)
-
-            path = src / subject / yml['image']['svs']
-            base = dst / use / str(s_time) / f"{subject}_"
-            size = 512, 512
-            stride = size
-            resize = 256, 256
-            args.append((path, base, size, stride, resize))
-
-            # # Serial execution
-            # save_patches(path, base, size=size, stride=stride)
-
-    # Parallel execution
-    Parallel(n_jobs=n_jobs)([
-        delayed(save_patches)(path, base, size, stride, resize)
-        for path, base, size, stride, resize in args
+        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize)
+        for path_svs, path_xml, base, size, stride, resize in args
     ])
 
 
 if __name__ == '__main__':
-    # create_survival()
-    create_time()
+    create()
