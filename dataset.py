@@ -75,11 +75,17 @@ def create():
 
         subject_dir = dst / number
         # if subject_dir.exists():
-        #     shutil.rmtree(subject_dir)
-        subject_dir.mkdir(parents=True, exist_ok=True)
+        #     print(f"Ignore {number}")
+        #     continue
+        #     # shutil.rmtree(subject_dir)
+        # subject_dir.mkdir(parents=True, exist_ok=True)
 
         path_svs = src / "svs" / f"{number}.svs"
         path_xml = src / "xml" / f"{number}.xml"
+        if not path_svs.exists() or not path_xml.exists():
+            print(f"{path_svs} or {path_xml} do not exists.")
+            continue
+
         base = dst / f"{number}" / "s{}_st{}_e{}_et{}_".format(
             subject['survival'],
             subject['survival time'],
