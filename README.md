@@ -20,6 +20,13 @@
         - naは評価不能または最初からイベントが発生済み
     - event time
 
+`/net/nfs2/export/dataset/mie-ortho/pathology`内に保存しているので、
+```shell-session
+$ cd ~/workspace/mie-pathology/_data
+$ ln -s /net/nfs2/export/dataset/mie-ortho/pathology/svs
+$ ln -s /net/nfs2/export/dataset/mie-ortho/pathology/xml
+```
+でローカルリポジトリ内にシンボリックリンクを貼って使う。
 
 ## Code
 
