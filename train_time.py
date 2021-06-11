@@ -9,11 +9,12 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 import torchvision
+import yaml
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
+from PIL import Image
 from PIL import ImageFile
 
-from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
 
 # To avoid "OSError: image file is truncated"
@@ -25,43 +26,121 @@ if torch.cuda.is_available():
     cudnn.benchmark = True
 
 
-class WeightedProbLoss(nn.Module):
-    def __init__(self, classes):
-        super(WeightedProbLoss, self).__init__()
+class PatchDataset(torch.utils.data.Dataset):
+    def __init__(self, root, subjects):
+        super(PatchDataset, self).__init__()
 
-        if isinstance(classes, int):
-            classes = [i for i in range(classes)]
+        self.transform = torchvision.transforms.Compose([
+            # torchvision.transforms.Resize((224, 224)),
+            torchvision.transforms.ToTensor(),
+            # torchvision.transforms.Normalize(0.5, 0.5)
+        ])
 
-        self.classes = torch.Tensor(classes).to(device)
+        self.paths = []
+        for subject in subjects:
+            self.paths += list((root / subject).iterdir())
 
-    def forward(self, pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
+        # print(self.paths[0])
+        # print(len(self.paths))
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, item):
+        """
+        :param item:    Index of item
+        :return:        Return tuple of (image, label)
+                        Label is always "10" <= MetricLearning
         """
 
-        :param pred:    Probabilities of each class
-        :param true:    1-hot vector
-        :return:
-        """
+        # img = self.data[item, :, :, :].view(3, 32, 32)
+        img = Image.open(self.paths[item]).convert('RGB')
+        img = self.transform(img)
 
-        c_pred = torch.sum(torch.mul(pred, self.classes))
-        c_true = torch.argmax(true)
+        # s0_st34.229508200000005_e0_et34.229508200000005_00000442img.png
+        name = self.paths[item].name                # Filename
+        label = float(str(name).split('_')[1][2:])  # Survival time
 
-        return torch.abs(c_pred - c_true)
+        # Normalize
+        label /= 90.
+        # Tensor
+        label = torch.tensor(label, dtype=torch.float)
+
+        return img, label
+
+    # @classmethod
+    # def load_list(cls, root):
+    #     # 顎骨正常データ取得と整形
+    #
+    #     with open(root, "rb") as f:
+    #         output = pickle.load(f)
+    #
+    #     return output
+    #
+    # @classmethod
+    # def load_torch(cls, _list):
+    #     output = torch.cat([_dict["data"].view(1, 3, 32, 32) for _dict in _list],
+    #                        dim=0)
+    #
+    #     return output
+    #
+    # @classmethod
+    # def load_necrosis(cls, root):
+    #     data = cls.load_list(root)
+    #     data = cls.load_torch(data)
+    #
+    #     return data
+
+# class WeightedProbLoss(nn.Module):
+#     def __init__(self, classes):
+#         super(WeightedProbLoss, self).__init__()
+#
+#         if isinstance(classes, int):
+#             classes = [i for i in range(classes)]
+#
+#         self.classes = torch.Tensor(classes).to(device)
+#
+#     def forward(self, pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
+#         """
+#
+#         :param pred:    Probabilities of each class
+#         :param true:    1-hot vector
+#         :return:
+#         """
+#
+#         c_pred = torch.sum(torch.mul(pred, self.classes))
+#         c_true = torch.argmax(true)
+#
+#         return torch.abs(c_pred - c_true)
 
 
 def main():
-    root = Path("~/data/_out/").expanduser()
+    src = Path("~/workspace/mie-pathology/_data/").expanduser()
+    root = Path("~/data/_out/mie-pathology/").expanduser()
 
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
 
+    # Load train/valid yaml
+    with open(src / "survival_time.yml", "r") as f:
+        yml = yaml.safe_load(f)
+
+    # print("PatchDataset")
+    # d = PatchDataset(root, yml['train'])
+    # d = PatchDataset(root, yml['valid'])
+    # print(len(d))
+    #
+    # print("==PatchDataset")
+    # return
+
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'train'), batch_size=batch_size, shuffle=True,
+        PatchDataset(root, yml['train']), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'valid'), batch_size=batch_size,
+        PatchDataset(root, yml['valid']), batch_size=batch_size,
         num_workers=num_workers
     )
 
@@ -77,7 +156,7 @@ def main():
     num_features = net.fc.in_features
     # print(num_features)  # 512
     net.fc = nn.Sequential(
-        nn.Linear(num_features, 4, bias=True),
+        nn.Linear(num_features, 1, bias=True),
         # nn.Softmax(dim=1)
         # nn.Sigmoid()
     )
@@ -89,7 +168,8 @@ def main():
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()
-    criterion = WeightedProbLoss(classes=4)
+    # criterion = WeightedProbLoss(classes=4)
+    criterion = nn.MSELoss()
 
     tensorboard = SummaryWriter(log_dir='./logs')
     model_name = "{}model".format(
