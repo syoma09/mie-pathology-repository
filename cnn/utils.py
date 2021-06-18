@@ -12,7 +12,14 @@ from PIL import ImageOps
 
 
 class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, ptn=None):
+        """
+
+        :param root:    Path to dataset root directory
+        :param ptn:     Apply filter by file name
+                        e.g.) ptn=re.compile(r"^.+57-10.+\.png$")
+                              uses subject 57-10 only.
+        """
         super(PatchDataset, self).__init__()
 
         self.transform = torchvision.transforms.Compose([
@@ -26,12 +33,17 @@ class PatchDataset(torch.utils.data.Dataset):
         self.classes = ["0", "1"]
 
         self.files = []
-        ptn = re.compile(r"^.+57-10.+\.png$")
+        # ptn = re.compile(r"^.+57-10.+\.png$")
         for cls, name in enumerate(self.classes):
-            self.files += [
-                (f, cls) for f in (root / name).iterdir()
-                if ptn.match(str(f))
-            ]
+            if ptn is None:
+                self.files += [
+                    (f, cls) for f in (root / name).iterdir()
+                ]
+            else:
+                self.files += [
+                    (f, cls) for f in (root / name).iterdir()
+                    if ptn.match(str(f))
+                ]
             print(name, len(self.files))
 
         random.shuffle(self.files)  # Random shuffle
