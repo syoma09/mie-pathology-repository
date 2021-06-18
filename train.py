@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import datetime
+import os
+import re
 from pathlib import Path
+from joblib import Parallel, delayed
 
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.utils.data
@@ -14,15 +17,90 @@ from torch.backends import cudnn
 
 from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
+from data.svs import save_patches
 
+
+# Set CUDA device
 device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
+# Check RAM capacity
+with open('/proc/meminfo', 'r') as f:
+    mem_total_str = [line for line in f.readlines() if line.startswith('MemTotal')]
+    mem_total = re.findall(r'[0-9]+', mem_total_str[0])[0]
+    mem_total = int(mem_total) / 1024 / 1024  # kB -> mB -> gB
+    mem_total -= 4  # Keep 4GB for system
+    print(mem_total)
+
+
+def get_dataset_root_path():
+    """
+
+    :return:    Dataset root Path() object
+    """
+
+    # # Home directory
+    # return Path("~/data/_out/mie-pathology/").expanduser()
+
+    # Local SSD Cache
+    return Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / 'survival'
+
+
+def create_dataset(src: Path, dst: Path, annotation: Path):
+    # Load annotation
+    df = pd.read_csv(annotation)
+    print(df)
+
+    args = []
+    for _, subject in df.iterrows():
+        number = subject['number']
+
+        path_svs = src / "svs" / f"{number}.svs"
+        path_xml = src / "xml" / f"{number}.xml"
+        if not path_svs.exists() or not path_xml.exists():
+            print(f"{path_svs} or {path_xml} do not exists.")
+            continue
+
+        subject_dir = dst / str(number)
+        if not subject_dir.exists():
+            subject_dir.mkdir(parents=True, exist_ok=True)
+
+        base = subject_dir / 'patch'
+        size = 512, 512
+        stride = size
+        resize = 256, 256
+        args.append((path_svs, path_xml, base, size, stride, resize))
+
+        # # Serial execution
+        # save_patches(path_svs, path_xml, base, size=size, stride=stride)
+
+    # Approx., 1 thread use 20GB
+    # n_jobs = int(mem_total / 20)
+    n_jobs = 4
+    print(f'Process in {n_jobs} threads.')
+    # Parallel execution
+    Parallel(n_jobs=n_jobs)([
+        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize)
+        for path_svs, path_xml, base, size, stride, resize in args
+    ])
+
 
 def main():
-    root = Path("~/data/_out/").expanduser()
+    dataset_root = get_dataset_root_path()
+    if not dataset_root.exists():
+        dataset_root.mkdir(parents=True, exist_ok=True)
 
+    # Create dataset
+    create_dataset(
+        src=Path("~/workspace/mie-pathology/_data/").expanduser(),
+        dst=dataset_root,
+        annotation=Path(
+            "~/workspace/mie-pathology/_data/survival_3os.csv"
+        ).expanduser()
+    )
+
+    return
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT

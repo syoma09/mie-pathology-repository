@@ -46,8 +46,8 @@ tables==3.6.1
 tensorboard==2.4.0
 tensorboard-plugin-wit==1.7.0
 toolz==0.10.0
-torch==1.7.1+cu110
-torchvision==0.8.2+cu110
+torch==1.9.0+cu111
+torchvision==0.10.0+cu111
 typing-extensions==3.7.4.3
 urllib3==1.26.2
 Werkzeug==1.0.1

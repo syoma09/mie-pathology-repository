@@ -119,3 +119,39 @@ class SVSAnnotation(object):
         :return:    vertices in pixel
         """
         return self._vertices
+
+
+def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None):
+    """
+
+    :param path_svs:    Path to image svs
+    :param path_xml:    Path to contour xml
+    :param base:        Base string of output file name
+    :param size:        Patch size
+    :param stride:      Patch stride
+    :param resize:      Resize extracted patch
+    :return:        None
+    """
+
+    svs = SVS(
+        path_svs,
+        annotation=path_xml
+    )
+
+    for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
+        patch_path = str(base) + f"{i:08}img.png"
+        if Path(patch_path).exists():
+            continue
+
+        # print(p0, p1)
+        img, mask = svs.extract_img_mask(p0, size)
+
+        if np.sum(mask) == size[0] * size[1] * 255:
+            if resize is not None:
+                img = img.resize(resize)
+
+            print(patch_path)
+            img.save(patch_path)
+            # Image.fromarray(mask).save(str(base) + f"{i:08}mask.png")
+
+    del svs
