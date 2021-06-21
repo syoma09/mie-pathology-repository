@@ -4,6 +4,7 @@
 import datetime
 import os
 import re
+import random
 from pathlib import Path
 from joblib import Parallel, delayed
 
@@ -14,8 +15,8 @@ import torch.utils.data
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
+from PIL import Image, ImageOps
 
-from cnn.utils import PatchDataset
 from cnn.metrics import ConfusionMatrix
 from data.svs import save_patches
 
@@ -32,6 +33,67 @@ with open('/proc/meminfo', 'r') as f:
     mem_total = int(mem_total) / 1024 / 1024  # kB -> mB -> gB
     mem_total -= 4  # Keep 4GB for system
     print(mem_total)
+
+
+class PatchDataset(torch.utils.data.Dataset):
+    def __init__(self, root: Path, annotations: list):
+        """
+
+        :param root:            Path to dataset root directory
+        :param annotations:     List of (subject, label).
+        """
+        super(PatchDataset, self).__init__()
+
+        self.transform = torchvision.transforms.Compose([
+            # torchvision.transforms.Resize((224, 224)),
+            torchvision.transforms.ToTensor(),
+            # torchvision.transforms.Normalize(0.5, 0.5)
+        ])
+
+        self.__dataset = []
+        # self.__paths = []   # List of image path
+        # self.__labels = []  # List of class label for image path
+
+        for subject, label in annotations:
+            self.__dataset += [
+                (path, label)   # Same label for one subject
+                for path in (root / subject).iterdir()
+            ]
+            # subject_paths = list((root / subject).iterdir())
+            # self.__paths += subject_paths
+            # self.__labels += [label for _ in subject_paths]
+
+        # random.shuffle(self.files)  # Random shuffle
+
+        print('PatchDataset')
+        print('  # patch :', len(self.__dataset))
+        print('  # of 0  :', len([l for _, l in self.__dataset if l == 0]))
+        print('  # of 1  :', len([l for _, l in self.__dataset if l == 1]))
+        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+
+    def __len__(self):
+        return len(self.__dataset)
+
+    def __getitem__(self, item):
+        """
+        :param item:    Index of item
+        :return:        Return tuple of (image, label)
+                        Label is always "10" <= MetricLearning
+        """
+
+        if item > len(self):
+            item %= len(self)
+
+        path, label = self.__dataset[item]
+        img = Image.open(path).convert('RGB')
+
+        # Apply image pre-processing
+        img = self.transform(ImageOps.mirror(img))   # / 255.
+        # print(img.shape)
+
+        # label = to1hot(label, 2)
+
+        return img, label
 
 
 def get_dataset_root_path():
@@ -77,7 +139,7 @@ def create_dataset(src: Path, dst: Path, annotation: Path):
 
     # Approx., 1 thread use 20GB
     # n_jobs = int(mem_total / 20)
-    n_jobs = 4
+    n_jobs = 8
     print(f'Process in {n_jobs} threads.')
     # Parallel execution
     Parallel(n_jobs=n_jobs)([
@@ -87,17 +149,22 @@ def create_dataset(src: Path, dst: Path, annotation: Path):
 
 
 def main():
-    dataset_root = get_dataset_root_path()
-    if not dataset_root.exists():
-        dataset_root.mkdir(parents=True, exist_ok=True)
+    # target = '3os'
+    target = '2dfs'
+    # dataset_root = Path("~/data/_out/mie-pathology/").expanduser()
+    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / f"survival_{target}"
+
+    annotation_path = Path(
+        f"~/workspace/mie-pathology/_data/survival_{target}.csv"
+    ).expanduser()
 
     # Create dataset
+    if not dataset_root.exists():
+        dataset_root.mkdir(parents=True, exist_ok=True)
     create_dataset(
         src=Path("~/workspace/mie-pathology/_data/").expanduser(),
         dst=dataset_root,
-        annotation=Path(
-            "~/workspace/mie-pathology/_data/survival_3os.csv"
-        ).expanduser()
+        annotation=annotation_path
     )
 
     return
@@ -105,13 +172,23 @@ def main():
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
 
+    # Load annotations
+    annotation = {
+        'train': [], 'valid': []
+    }
+    for _, row in pd.read_csv(annotation_path).iterrows():
+        annotation[
+            # Switch train/valid by tvt-column value (0: train, 1: valid)
+            ['train', 'valid'][int(row['tvt'])]
+        ].append((row['number'], row['label']))     # Append annotation tuple
+
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'train'), batch_size=batch_size, shuffle=True,
+        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'valid'), batch_size=batch_size,
+        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
         num_workers=num_workers
     )
 
@@ -173,7 +250,7 @@ def main():
             )
         print('')
         print('    Saving model...')
-        torch.save(model.state_dict(), root / f"{model_name}{epoch:05}.pth")
+        torch.save(model.state_dict(), dataset_root / f"{model_name}{epoch:05}.pth")
 
         # Switch to evaluation mode
         model.eval()
@@ -190,6 +267,7 @@ def main():
             }
         }
         # Calculate validation metrics
+        print('    Start validation...')
         with torch.no_grad():
             for x, y_true in valid_loader:
                 x, y_true = x.to(device), y_true.to(device)
