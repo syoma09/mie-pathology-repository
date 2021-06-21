@@ -167,7 +167,7 @@ def main():
         annotation=annotation_path
     )
 
-    return
+    # return
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT

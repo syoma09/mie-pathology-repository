@@ -20,6 +20,13 @@
         - naは評価不能または最初からイベントが発生済み
     - event time
 
+#### ファイル
+- `survival.csv`: 生存・非生存
+    - `survival_3os.csv`: 3年時生存
+    - `survival_2dfs.csv`: 2年時無病生存
+
+
+#### リンク
 `/net/nfs2/export/dataset/mie-ortho/pathology`内に保存しているので、
 ```shell-session
 $ cd ~/workspace/mie-pathology/_data
