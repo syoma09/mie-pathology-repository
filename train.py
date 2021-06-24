@@ -4,7 +4,6 @@
 import datetime
 import os
 import re
-import random
 from pathlib import Path
 from joblib import Parallel, delayed
 
@@ -51,19 +50,14 @@ class PatchDataset(torch.utils.data.Dataset):
         ])
 
         self.__dataset = []
-        # self.__paths = []   # List of image path
-        # self.__labels = []  # List of class label for image path
 
         for subject, label in annotations:
             self.__dataset += [
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
             ]
-            # subject_paths = list((root / subject).iterdir())
-            # self.__paths += subject_paths
-            # self.__labels += [label for _ in subject_paths]
 
-        # random.shuffle(self.files)  # Random shuffle
+        # self.__dataset = self.__dataset[:512]
 
         print('PatchDataset')
         print('  # patch :', len(self.__dataset))
@@ -158,28 +152,28 @@ def main():
         f"~/workspace/mie-pathology/_data/survival_{target}.csv"
     ).expanduser()
 
-    # Create dataset
+    # Create dataset if not exists
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
-    create_dataset(
-        src=Path("~/workspace/mie-pathology/_data/").expanduser(),
-        dst=dataset_root,
-        annotation=annotation_path
-    )
+        create_dataset(
+            src=Path("~/workspace/mie-pathology/_data/").expanduser(),
+            dst=dataset_root,
+            annotation=annotation_path
+        )
 
     # return
-    epochs = 10000
+    epochs = 1000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
 
     # Load annotations
     annotation = {
-        'train': [], 'valid': []
+        'train': [], 'valid': [], 'test': [], 'IGNORE': []
     }
     for _, row in pd.read_csv(annotation_path).iterrows():
         annotation[
             # Switch train/valid by tvt-column value (0: train, 1: valid)
-            ['train', 'valid'][int(row['tvt'])]
+            ['train', 'valid', 'test', 'IGNORE'][int(row['tvt'])]
         ].append((row['number'], row['label']))     # Append annotation tuple
 
     # データ読み込み
@@ -245,9 +239,14 @@ def main():
                 ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
                 loss.item()
             ), end="")
-            tensorboard.add_scalar(
-                'train_loss', loss.item(), epoch * batch_size + batch
-            )
+            # tensorboard.add_scalar(
+            #     'train_loss', loss.item(), epoch * batch_size + batch
+            # )
+
+        tensorboard.add_scalar(
+            'train_loss', train_loss, epoch
+        )
+
         print('')
         print('    Saving model...')
         torch.save(model.state_dict(), dataset_root / f"{model_name}{epoch:05}.pth")
@@ -287,16 +286,22 @@ def main():
 
         # Console write
         print("    train loss: {:3.3}".format(metrics['train']['loss']))
-        print("          acc : {:3.3}".format(metrics['train']['cmat'].accuracy()))
-        print("          f1  : {:3.3}".format(metrics['train']['cmat'].f1()))
+        print("          precision : {:3.3}".format(metrics['train']['cmat'].precision()))
+        print("          recall    : {:3.3}".format(metrics['train']['cmat'].recall()))
+        print("          accuracy  : {:3.3}".format(metrics['train']['cmat'].accuracy()))
+        print("          f-measure : {:3.3}".format(metrics['train']['cmat'].f1()))
         print("    valid loss: {:3.3}".format(metrics['valid']['loss']))
-        print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
-        print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
+        print("          precision : {:3.3}".format(metrics['valid']['cmat'].precision()))
+        print("          recall    : {:3.3}".format(metrics['valid']['cmat'].recall()))
+        print("          accuracy  : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
+        print("          f-measure : {:3.3}".format(metrics['valid']['cmat'].f1()))
         print("        Matrix:")
         print(metrics['valid']['cmat'])
         # Write tensorboard
         tensorboard.add_scalar('train_loss', train_loss, epoch)
         tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
+        tensorboard.add_scalar('valid_prec', metrics['valid']['cmat'].precision(), epoch)
+        tensorboard.add_scalar('valid_rec', metrics['valid']['cmat'].recall(), epoch)
         tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 
