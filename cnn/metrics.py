@@ -27,7 +27,9 @@ class ConfusionMatrix(object):
             # print(y_true)
             # print(torch.max(y_true, dim=1))
             y_pred = torch.max(y_pred, dim=1)[1]    # argmax
-            # y_true = torch.max(y_true, dim=1)[1]    # argmax
+            y_true = torch.max(y_true, dim=1)[1]    # argmax
+            # print(y_pred)
+            # print(y_true)
             for p, q in zip(y_pred, y_true):
                 self._mat[p, q] += 1
 
