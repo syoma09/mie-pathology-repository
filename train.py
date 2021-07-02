@@ -4,6 +4,7 @@
 import datetime
 import os
 import re
+import random
 from pathlib import Path
 from joblib import Parallel, delayed
 
@@ -44,8 +45,13 @@ class PatchDataset(torch.utils.data.Dataset):
         super(PatchDataset, self).__init__()
 
         self.transform = torchvision.transforms.Compose([
-            # torchvision.transforms.Resize((224, 224)),
+            torchvision.transforms.Resize(299),
+            torchvision.transforms.CenterCrop(299),
             torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )   # Normalization for ImageNet pretrained model
             # torchvision.transforms.Normalize(0.5, 0.5)
         ])
 
@@ -56,6 +62,8 @@ class PatchDataset(torch.utils.data.Dataset):
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
             ]
+        # Random shuffle
+        random.shuffle(self.__dataset)
 
         self.__num_class = len(set(label for _, label in self.__dataset))
         # self.__dataset = self.__dataset[:512]
@@ -86,6 +94,8 @@ class PatchDataset(torch.utils.data.Dataset):
         img = self.transform(ImageOps.mirror(img))   # / 255.
         # print(img.shape)
 
+        # # Single node output
+        # target = torch.tensor([label], dtype=torch.float)
         # Convert to 1-Hot vector
         target = [0.0] * self.__num_class
         target[label] = 1.0
@@ -167,7 +177,7 @@ def main():
 
     # return
     epochs = 1000
-    batch_size = 32     # 64 requires 19 GiB VRAM
+    batch_size = 128     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
 
     # Load annotations
@@ -194,26 +204,31 @@ def main():
     モデルの構築
     '''
     # model = torchvision.models.resnet152(pretrained=False)
-    model = torchvision.models.resnet152(pretrained=True)
+    # model = torchvision.models.resnet152(pretrained=True)       # Too large -> Over-fitting
     # model = torchvision.models.resnet50(pretrained=True)
-    # print(model)
+    # model = torchvision.models.resnet50(pretrained=False)
+    model = torchvision.models.inception_v3(pretrained=False)
+    print(model)
 
     # Replace FC layer
     num_features = model.fc.in_features
     # print(num_features)  # 512
-    model.fc = nn.Sequential(
-        nn.Linear(num_features, 2, bias=True),
-        # nn.Sigmoid()
-        nn.Softmax(dim=1)
-    )
+    # model.fc = nn.Sequential(
+    #     nn.Linear(num_features, 2, bias=True),
+    # )
+    model.fc = nn.Linear(num_features, 2, bias=True)
+    # model.fc = nn.Linear(num_features, 1, bias=True)
+
+    print(model)
     model = model.to(device)
 
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # criterion = nn.CrossEntropyLoss()
-    criterion = nn.BCELoss()              # Need Sigmoid
-    # criterion = nn.BCEWithLogitsLoss()
+    # criterion = nn.BCELoss()              # Need Sigmoid
+    # criterion = nn.BCELoss(reduction='sum')              # Need Sigmoid
+    criterion = nn.BCEWithLogitsLoss()
 
     tensorboard = SummaryWriter(log_dir='./logs')
     model_name = "{}model".format(
@@ -241,6 +256,9 @@ def main():
 
             x, y_true = x.to(device), y_true.to(device)
             y_pred = model(x)   # Forward
+            y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
+            # y_pred = torch.sigmoid(y_pred)
+            # y_pred = torch.nn.functional.softmax(y_pred, dim=1)
             # print(y_true)
             # print(y_pred)
 
@@ -258,44 +276,40 @@ def main():
                 loss.item()
             ), end="")
 
-        # tensorboard.add_scalar(
-        #     'train_loss', train_loss, epoch
-        # )
-
         print('')
-        print('    Saving model...')
+        print('  Saving model...')
         torch.save(model.state_dict(), dataset_root / f"{model_name}{epoch:05}.pth")
 
         # Switch to evaluation mode
         model.eval()
 
         # Calculate validation metrics
-        print('    Start validation...')
         with torch.no_grad():
-            for x, y_true in valid_loader:
+            for i, (x, y_true) in enumerate(valid_loader):
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = model(x)  # Prediction
+                # y_pred = torch.sigmoid(y_pred)
+                # y_pred = torch.nn.functional.softmax(y_pred, dim=1)
 
                 loss = criterion(y_pred, y_true)  # Calculate validation loss
                 # print(loss.item())
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
                 metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
 
-            # for x, y_true in train_loader:
-            #     x, y_true = x.to(device), y_true.to(device)
-            #     y_pred = model(x)  # Prediction
-            #
-            #     metrics['train']['loss'] += criterion(y_pred, y_true).item() / len(train_loader)
-            #     metrics['train']['cmat'] += ConfusionMatrix(y_pred, y_true)
+                print("\r  Validating... ({:6}/{:6})[{}]".format(
+                    i, len(valid_loader),
+                    ('=' * (30 * i // len(valid_loader)) + " " * 30)[:30]
+                ), end="")
 
         # Console write
-        print("    train loss: {:3.3}".format(metrics['train']['loss']))
+        print("")
+        print("    train loss      : {:3.3}".format(metrics['train']['loss']))
         print("          precision : {:3.3}".format(metrics['train']['cmat'].precision()))
         print("          recall    : {:3.3}".format(metrics['train']['cmat'].recall()))
         print("          accuracy  : {:3.3}".format(metrics['train']['cmat'].accuracy()))
         print("          f-measure : {:3.3}".format(metrics['train']['cmat'].f1()))
         print(metrics['train']['cmat'])
-        print("    valid loss: {:3.3}".format(metrics['valid']['loss']))
+        print("    valid loss      : {:3.3}".format(metrics['valid']['loss']))
         print("          precision : {:3.3}".format(metrics['valid']['cmat'].precision()))
         print("          recall    : {:3.3}".format(metrics['valid']['cmat'].recall()))
         print("          accuracy  : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
