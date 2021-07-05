@@ -19,6 +19,7 @@ from PIL import Image, ImageOps
 
 from cnn.metrics import ConfusionMatrix
 from data.svs import save_patches
+from survival import get_dataset_root_path, PatchDataset, create_model
 
 
 # Set CUDA device
@@ -33,88 +34,6 @@ with open('/proc/meminfo', 'r') as f:
     mem_total = int(mem_total) / 1024 / 1024  # kB -> mB -> gB
     mem_total -= 4  # Keep 4GB for system
     print(mem_total)
-
-
-class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root: Path, annotations: list):
-        """
-
-        :param root:            Path to dataset root directory
-        :param annotations:     List of (subject, label).
-        """
-        super(PatchDataset, self).__init__()
-
-        self.transform = torchvision.transforms.Compose([
-            torchvision.transforms.Resize(299),
-            torchvision.transforms.CenterCrop(299),
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
-            )   # Normalization for ImageNet pretrained model
-            # torchvision.transforms.Normalize(0.5, 0.5)
-        ])
-
-        self.__dataset = []
-
-        for subject, label in annotations:
-            self.__dataset += [
-                (path, label)   # Same label for one subject
-                for path in (root / subject).iterdir()
-            ]
-        # Random shuffle
-        random.shuffle(self.__dataset)
-
-        self.__num_class = len(set(label for _, label in self.__dataset))
-        # self.__dataset = self.__dataset[:512]
-
-        print('PatchDataset')
-        print('  # patch :', len(self.__dataset))
-        print('  # of 0  :', len([l for _, l in self.__dataset if l == 0]))
-        print('  # of 1  :', len([l for _, l in self.__dataset if l == 1]))
-        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
-
-    def __len__(self):
-        return len(self.__dataset)
-
-    def __getitem__(self, item):
-        """
-        :param item:    Index of item
-        :return:        Return tuple of (image, label)
-                        Label is always "10" <= MetricLearning
-        """
-
-        if item > len(self):
-            item %= len(self)
-
-        path, label = self.__dataset[item]
-        img = Image.open(path).convert('RGB')
-
-        # Apply image pre-processing
-        img = self.transform(ImageOps.mirror(img))   # / 255.
-        # print(img.shape)
-
-        # # Single node output
-        # target = torch.tensor([label], dtype=torch.float)
-        # Convert to 1-Hot vector
-        target = [0.0] * self.__num_class
-        target[label] = 1.0
-        target = torch.tensor(target, dtype=torch.float)
-
-        return img, target
-
-
-def get_dataset_root_path():
-    """
-
-    :return:    Dataset root Path() object
-    """
-
-    # # Home directory
-    # return Path("~/data/_out/mie-pathology/").expanduser()
-
-    # Local SSD Cache
-    return Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / 'survival'
 
 
 def create_dataset(src: Path, dst: Path, annotation: Path):
@@ -203,25 +122,7 @@ def main():
     '''
     モデルの構築
     '''
-    # model = torchvision.models.resnet152(pretrained=False)
-    # model = torchvision.models.resnet152(pretrained=True)       # Too large -> Over-fitting
-    # model = torchvision.models.resnet50(pretrained=True)
-    # model = torchvision.models.resnet50(pretrained=False)
-    model = torchvision.models.inception_v3(pretrained=False)
-    print(model)
-
-    # Replace FC layer
-    num_features = model.fc.in_features
-    # print(num_features)  # 512
-    # model.fc = nn.Sequential(
-    #     nn.Linear(num_features, 2, bias=True),
-    # )
-    model.fc = nn.Linear(num_features, 2, bias=True)
-    # model.fc = nn.Linear(num_features, 1, bias=True)
-
-    print(model)
-    model = model.to(device)
-
+    model = create_model().to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
