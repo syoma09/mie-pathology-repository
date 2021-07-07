@@ -56,7 +56,8 @@ class PatchDataset(torch.utils.data.Dataset):
         # Random shuffle
         random.shuffle(self.__dataset)
 
-        self.__num_class = len(set(label for _, label in self.__dataset))
+        # self.__num_class = len(set(label for _, label in self.__dataset))
+        self.__num_class = 2
         # self.__dataset = self.__dataset[:512]
 
         print('PatchDataset')
