@@ -41,7 +41,7 @@ def plot_valid_loss(log: Path):
 
 
 def plot_valid_f1(log: Path):
-    tag = 'valid_f1'
+    tag = 'valid_f1inv'
 
     data = get_tb_value(log, tag)
     plt.plot(
@@ -107,14 +107,14 @@ def plot_train_f1(log: Path):
 
 
 def main():
-    tf_log = Path(
-        "../logs/events.out.tfevents.1625215906.triton.706654.0"
-    ).absolute()
+    tf_log = Path("../logs").absolute()
+    # tf_log /= "events.out.tfevents.1625215906.triton.706654.0"
+    tf_log /= "events.out.tfevents.1625628100.triton.3998470.0"
 
+    # plot_train_loss(tf_log)
+    # plot_train_f1(tf_log)
     plot_valid_loss(tf_log)
     plot_valid_f1(tf_log)
-    plot_train_loss(tf_log)
-    plot_train_f1(tf_log)
 
 
 if __name__ == '__main__':

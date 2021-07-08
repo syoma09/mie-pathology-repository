@@ -78,8 +78,11 @@ def create_dataset(src: Path, dst: Path, annotation: Path):
 def main():
     # target = '3os'
     target = '2dfs'
-    # dataset_root = Path("~/data/_out/mie-pathology/").expanduser()
     dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / f"survival_{target}"
+
+    # Log, epoch-model output directory
+    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
         f"~/workspace/mie-pathology/_data/survival_{target}.csv"
@@ -123,18 +126,15 @@ def main():
     モデルの構築
     '''
     model = create_model().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()              # Need Sigmoid
     # criterion = nn.BCELoss(reduction='sum')              # Need Sigmoid
     criterion = nn.BCEWithLogitsLoss()
 
-    tensorboard = SummaryWriter(log_dir='./logs')
-    model_name = "{}model".format(
-        datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
-    )
+    tensorboard = SummaryWriter(log_dir=str(log_root))
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
 
@@ -179,7 +179,7 @@ def main():
 
         print('')
         print('  Saving model...')
-        torch.save(model.state_dict(), dataset_root / f"{model_name}{epoch:05}.pth")
+        torch.save(model.state_dict(), log_root / f"model{epoch:05}.pth")
 
         # Switch to evaluation mode
         model.eval()
@@ -204,27 +204,24 @@ def main():
 
         # Console write
         print("")
-        print("    train loss      : {:3.3}".format(metrics['train']['loss']))
-        print("          precision : {:3.3}".format(metrics['train']['cmat'].precision()))
-        print("          recall    : {:3.3}".format(metrics['train']['cmat'].recall()))
-        print("          accuracy  : {:3.3}".format(metrics['train']['cmat'].accuracy()))
-        print("          f-measure : {:3.3}".format(metrics['train']['cmat'].f1()))
+        print("    train loss  : {:3.3}".format(metrics['train']['loss']))
+        print("          f1inv : {:3.3}".format(metrics['train']['cmat'].f1inv))
+        print("          npv   : {:3.3}".format(metrics['train']['cmat'].npv))
+        print("          tnr   : {:3.3}".format(metrics['train']['cmat'].tnr))
         print(metrics['train']['cmat'])
-        print("    valid loss      : {:3.3}".format(metrics['valid']['loss']))
-        print("          precision : {:3.3}".format(metrics['valid']['cmat'].precision()))
-        print("          recall    : {:3.3}".format(metrics['valid']['cmat'].recall()))
-        print("          accuracy  : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
-        print("          f-measure : {:3.3}".format(metrics['valid']['cmat'].f1()))
+        print("    valid loss  : {:3.3}".format(metrics['valid']['loss']))
+        print("          f1inv : {:3.3}".format(metrics['valid']['cmat'].f1inv))
+        print("          npv   : {:3.3}".format(metrics['valid']['cmat'].npv))
+        print("          tnr   : {:3.3}".format(metrics['valid']['cmat'].tnr))
         print("        Matrix:")
         print(metrics['valid']['cmat'])
         # Write tensorboard
-        tensorboard.add_scalar('train_loss', metrics['train']['loss'], epoch)
-        tensorboard.add_scalar('train_f1', metrics['train']['cmat'].f1(), epoch)
-        tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
-        tensorboard.add_scalar('valid_prec', metrics['valid']['cmat'].precision(), epoch)
-        tensorboard.add_scalar('valid_rec', metrics['valid']['cmat'].recall(), epoch)
-        tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
-        tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
+        for tv in ['train', 'valid']:
+            # Loss
+            tensorboard.add_scalar(f"{tv}_loss", metrics[tv]['loss'], epoch)
+            # For ConfusionMatrix
+            for m_name in ["f1inv", "npv", "tpr", "tn", "tp", "fn", "fp"]:
+                tensorboard.add_scalar(f"{tv}_f1inv", getattr(metrics[tv]['cmat'], m_name), epoch)
 
 
 if __name__ == '__main__':
