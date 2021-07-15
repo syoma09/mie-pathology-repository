@@ -89,9 +89,11 @@ class ConfusionMatrix(object):
         """negative predictive value"""
         return self.tn / (self.fn + self.tn + 1e-8)
 
+    @property
     def accuracy(self):
         return (self.tp + self.tn) / (self.tp + self.fp + self.fn + self.tn)
 
+    @property
     def precision(self):
         return self.ppv
 
@@ -103,6 +105,7 @@ class ConfusionMatrix(object):
     def specificity(self):
         return self.tnr
 
+    @property
     def f1(self):
         ppv = self.ppv
         tpr = self.tpr

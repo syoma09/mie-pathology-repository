@@ -44,6 +44,7 @@ def plot_valid_f1(log: Path):
     tag = 'valid_f1inv'
 
     data = get_tb_value(log, tag)
+    print(data)
     plt.plot(
         list(range(len(data))), data
     )
@@ -52,7 +53,8 @@ def plot_valid_f1(log: Path):
     plt.title("Validation f-measure")
 
     plt.xlim(0, (len(data) + 50) // 50 * 50)
-    plt.ylim(0, 1)
+    # plt.ylim(0, 1)
+    plt.ylim(0, None)
 
     plt.tick_params(direction='in')
     plt.grid()
@@ -85,7 +87,7 @@ def plot_train_loss(log: Path):
 
 
 def plot_train_f1(log: Path):
-    tag = "train_f1"
+    tag = "train_f1inv"
     data = get_tb_value(log, tag)
     plt.plot(
         list(range(len(data))), data
@@ -107,12 +109,17 @@ def plot_train_f1(log: Path):
 
 
 def main():
-    tf_log = Path("../logs").absolute()
-    # tf_log /= "events.out.tfevents.1625215906.triton.706654.0"
-    tf_log /= "events.out.tfevents.1625628100.triton.3998470.0"
+    tf_log = Path(
+        # "~/data/_out/mie-pathology/20210708_102414/"
+        # "~/data/_out/mie-pathology/20210714_151737/"
+        "~/data/_out/mie-pathology/20210715_113507/"
+    ).expanduser()
 
-    # plot_train_loss(tf_log)
-    # plot_train_f1(tf_log)
+    if tf_log.is_dir():
+        tf_log = list(tf_log.glob("events.out.tfevents.*"))[0]
+
+    plot_train_loss(tf_log)
+    plot_train_f1(tf_log)
     plot_valid_loss(tf_log)
     plot_valid_f1(tf_log)
 

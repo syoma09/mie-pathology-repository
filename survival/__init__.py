@@ -50,7 +50,7 @@ class PatchDataset(torch.utils.data.Dataset):
 
         for subject, label in annotations:
             self.__dataset += [
-                (path, label)   # Same label for one subject
+                (path, (label + 1) % 2)   # Same label for one subject
                 for path in (root / subject).iterdir()
             ]
         # Random shuffle
@@ -97,24 +97,45 @@ class PatchDataset(torch.utils.data.Dataset):
 
 
 def create_model():
+    """
+
+    :return:    None
+    """
+    # # VGG16: 134M params
+    # # model = torchvision.models.vgg16(pretrained=True)
+    # model = torchvision.models.vgg16(pretrained=False)
+    """VGG11Bn: """
+    model = torchvision.models.vgg11_bn(pretrained=True)
+    model.classifier[6] = nn.Linear(
+        model.classifier[6].in_features, out_features=2, bias=True
+    )
+
+    # """ResNet152: 60M params"""
     # model = torchvision.models.resnet152(pretrained=False)
-    # model = torchvision.models.resnet152(pretrained=True)       # Too large -> Over-fitting
-    # model = torchvision.models.resnet50(pretrained=True)
-    # model = torchvision.models.resnet50(pretrained=False)
-    model = torchvision.models.inception_v3(pretrained=False)
-    # print(model)
+    # # model = torchvision.models.resnet152(pretrained=True)       # Too large -> Over-fitting
+    # """ResNet50: 25M params"""
+    # # model = torchvision.models.resnet50(pretrained=False)
+    # model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
 
-    # Replace FC layer
-    num_features = model.fc.in_features
-    # print(num_features)  # 512
-    # model.fc = nn.Sequential(
-    #     nn.Linear(num_features, 2, bias=True),
+    # # Inception-v3: 25M params
+    # model = torchvision.models.inception_v3(pretrained=False)
+    # # model.fc = nn.Linear(model.fc.in_features, 1, bias=True)
+    # model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
+
+    # """DenseNet121: 58M params"""
+    # model = torchvision.models.densenet121(pretrained=False)
+    # model.classifier = nn.Linear(
+    #     in_features=model.classifier.in_features, out_features=2, bias=True
     # )
-    model.fc = nn.Linear(num_features, 2, bias=True)
-    # model.fc = nn.Linear(num_features, 1, bias=True)
 
-    # print(model)
+    print(model)
 
+    # num_params = sum(param.numel() for param in model.parameters())
+    # print(f"{num_params} parameters")
+    # print(f"{num_params // 1000}K parameters")
+    # print(f"{num_params // 1000000}M parameters")
+
+    # exit(0)
     return model
 
 

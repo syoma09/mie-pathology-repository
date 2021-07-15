@@ -36,7 +36,7 @@ with open('/proc/meminfo', 'r') as f:
     print(mem_total)
 
 
-def create_dataset(src: Path, dst: Path, annotation: Path):
+def create_dataset(src: Path, dst: Path, annotation: Path, size):
     # Load annotation
     df = pd.read_csv(annotation)
     print(df)
@@ -56,7 +56,7 @@ def create_dataset(src: Path, dst: Path, annotation: Path):
             subject_dir.mkdir(parents=True, exist_ok=True)
 
         base = subject_dir / 'patch'
-        size = 512, 512
+        # size = 512, 512
         stride = size
         resize = 256, 256
         args.append((path_svs, path_xml, base, size, stride, resize))
@@ -78,7 +78,11 @@ def create_dataset(src: Path, dst: Path, annotation: Path):
 def main():
     # target = '3os'
     target = '2dfs'
-    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / f"survival_{target}"
+    patch_size = 1024, 1024
+    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / "survival_{}_{}".format(
+        target,
+        f"{patch_size[0]}x{patch_size[1]}"
+    )
 
     # Log, epoch-model output directory
     log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -94,13 +98,9 @@ def main():
         create_dataset(
             src=Path("~/workspace/mie-pathology/_data/").expanduser(),
             dst=dataset_root,
-            annotation=annotation_path
+            annotation=annotation_path,
+            size=patch_size
         )
-
-    # return
-    epochs = 1000
-    batch_size = 128     # 64 requires 19 GiB VRAM
-    num_workers = os.cpu_count() // 2   # For SMT
 
     # Load annotations
     annotation = {
@@ -114,12 +114,12 @@ def main():
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
-        num_workers=num_workers
+        PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
+        num_workers=os.cpu_count() // 2
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
-        num_workers=num_workers
+        PatchDataset(dataset_root, annotation['valid']), batch_size=128,
+        num_workers=train_loader.num_workers
     )
 
     '''
@@ -135,6 +135,8 @@ def main():
     criterion = nn.BCEWithLogitsLoss()
 
     tensorboard = SummaryWriter(log_dir=str(log_root))
+
+    epochs = 1000
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
 
@@ -153,17 +155,12 @@ def main():
         model.train()
 
         for batch, (x, y_true) in enumerate(train_loader):
-            optimizer.zero_grad()
-
             x, y_true = x.to(device), y_true.to(device)
             y_pred = model(x)   # Forward
-            y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
-            # y_pred = torch.sigmoid(y_pred)
-            # y_pred = torch.nn.functional.softmax(y_pred, dim=1)
-            # print(y_true)
-            # print(y_pred)
+            # y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
 
             loss = criterion(y_pred, y_true)  # Calculate training loss
+            optimizer.zero_grad()
             loss.backward()     # Backward propagation
             optimizer.step()    # Update parameters
 
@@ -205,14 +202,20 @@ def main():
         # Console write
         print("")
         print("    train loss  : {:3.3}".format(metrics['train']['loss']))
-        print("          f1inv : {:3.3}".format(metrics['train']['cmat'].f1inv))
-        print("          npv   : {:3.3}".format(metrics['train']['cmat'].npv))
-        print("          tnr   : {:3.3}".format(metrics['train']['cmat'].tnr))
+        # print("          f1inv : {:3.3}".format(metrics['train']['cmat'].f1inv))
+        # print("          npv   : {:3.3}".format(metrics['train']['cmat'].npv))
+        # print("          tnr   : {:3.3}".format(metrics['train']['cmat'].tnr))
+        print("          f1        : {:3.3}".format(metrics['train']['cmat'].f1))
+        print("          precision : {:3.3}".format(metrics['train']['cmat'].precision))
+        print("          recall    : {:3.3}".format(metrics['train']['cmat'].recall))
         print(metrics['train']['cmat'])
         print("    valid loss  : {:3.3}".format(metrics['valid']['loss']))
-        print("          f1inv : {:3.3}".format(metrics['valid']['cmat'].f1inv))
-        print("          npv   : {:3.3}".format(metrics['valid']['cmat'].npv))
-        print("          tnr   : {:3.3}".format(metrics['valid']['cmat'].tnr))
+        # print("          f1inv : {:3.3}".format(metrics['valid']['cmat'].f1inv))
+        # print("          npv   : {:3.3}".format(metrics['valid']['cmat'].npv))
+        # print("          tnr   : {:3.3}".format(metrics['valid']['cmat'].tnr))
+        print("          f1       : {:3.3}".format(metrics['valid']['cmat'].f1))
+        print("          precision: {:3.3}".format(metrics['valid']['cmat'].precision))
+        print("          recall   : {:3.3}".format(metrics['valid']['cmat'].recall))
         print("        Matrix:")
         print(metrics['valid']['cmat'])
         # Write tensorboard
@@ -220,8 +223,8 @@ def main():
             # Loss
             tensorboard.add_scalar(f"{tv}_loss", metrics[tv]['loss'], epoch)
             # For ConfusionMatrix
-            for m_name in ["f1inv", "npv", "tpr", "tn", "tp", "fn", "fp"]:
-                tensorboard.add_scalar(f"{tv}_f1inv", getattr(metrics[tv]['cmat'], m_name), epoch)
+            for m_name in ["f1inv", "npv", "tpr", "precision", "recall", "tn", "tp", "fn", "fp"]:
+                tensorboard.add_scalar(f"{tv}_{m_name}", getattr(metrics[tv]['cmat'], m_name), epoch)
 
 
 if __name__ == '__main__':
