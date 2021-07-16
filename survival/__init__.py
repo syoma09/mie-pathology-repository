@@ -50,7 +50,7 @@ class PatchDataset(torch.utils.data.Dataset):
 
         for subject, label in annotations:
             self.__dataset += [
-                (path, (label + 1) % 2)   # Same label for one subject
+                (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
             ]
         # Random shuffle
