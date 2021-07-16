@@ -14,16 +14,22 @@ def get_tb_value(log: Path, tag: str) -> [float]:
         for v in e.summary.value
         if v.tag == tag
     ]
+    # return [
+    #     v.simple_value
+    #     for e in tf.data.TFRecordDataset(log)
+    #     for v in e.summary.value
+    #     if v.tag == tag
+    # ]
 
 
-def plot_valid_loss(log: Path):
-    data = get_tb_value(log, 'valid_loss')
+def plot_loss(log: Path, dataset):
+    data = get_tb_value(log, f"{dataset}_loss")
     plt.plot(
         list(range(len(data))), data
     )
     plt.xlabel("Epoch")
     plt.ylabel("BCE")
-    plt.title("Validation Loss")
+    plt.title(f"{dataset} Loss")
 
     plt.xlim(0, (len(data) + 50) // 50 * 50)
     plt.ylim(
@@ -35,93 +41,59 @@ def plot_valid_loss(log: Path):
     plt.grid()
 
     plt.tight_layout()
-    plt.savefig("valid_loss.jpg")
-    # plt.show()
+    plt.savefig(f"{dataset}_loss.jpg")
+
     plt.close()
 
 
-def plot_valid_f1(log: Path):
-    tag = 'valid_f1inv'
+def plot_metric(path: Path, dataset, metric_type):
+    tag = f"{dataset}_{metric_type}"
+    data = get_tb_value(path, tag)
 
-    data = get_tb_value(log, tag)
-    print(data)
     plt.plot(
         list(range(len(data))), data
     )
     plt.xlabel("Epoch")
-    plt.ylabel("f-measure")
-    plt.title("Validation f-measure")
+    plt.ylabel(metric_type)
+    plt.title(f"{dataset} {metric_type}")
 
     plt.xlim(0, (len(data) + 50) // 50 * 50)
-    # plt.ylim(0, 1)
-    plt.ylim(0, None)
+    plt.ylim(0, 1)
+    # plt.ylim(0, None)
 
     plt.tick_params(direction='in')
     plt.grid()
 
     plt.tight_layout()
     plt.savefig(f"{tag}.jpg")
-    # plt.show()
-    plt.close()
 
-
-def plot_train_loss(log: Path):
-    data = get_tb_value(log, 'train_loss')
-    plt.plot(
-        list(range(len(data))), data
-    )
-    plt.xlabel("Epoch")
-    plt.ylabel("BCE")
-    plt.title("Training Loss")
-
-    plt.xlim(0, (len(data) + 50) // 50 * 50)
-    plt.ylim(0, None)
-
-    plt.tick_params(direction='in')
-    plt.grid()
-
-    plt.tight_layout()
-    plt.savefig("train_loss.jpg")
-    # plt.show()
-    plt.close()
-
-
-def plot_train_f1(log: Path):
-    tag = "train_f1inv"
-    data = get_tb_value(log, tag)
-    plt.plot(
-        list(range(len(data))), data
-    )
-    plt.xlabel("Epoch")
-    plt.ylabel("f-measure")
-    plt.title("Training f-measure")
-
-    plt.xlim(0, (len(data) + 50) // 50 * 50)
-    plt.ylim(0.8, 1)
-
-    plt.tick_params(direction='in')
-    plt.grid()
-
-    plt.tight_layout()
-    plt.savefig(f"{tag}.jpg")
-    # plt.show()
     plt.close()
 
 
 def main():
-    tf_log = Path(
-        # "~/data/_out/mie-pathology/20210708_102414/"
-        # "~/data/_out/mie-pathology/20210714_151737/"
-        "~/data/_out/mie-pathology/20210715_113507/"
-    ).expanduser()
+    tf_log = Path("~/data/_out/mie-pathology").expanduser()
+
+    # Find latest logging directory
+    tf_log = sorted(tf_log.iterdir())[-1]
+    # Or manually select
+    # tf_log /= "20210708_102414"
+    # tf_log /= "20210714_151737"
+
+    print("Process log in", tf_log)
 
     if tf_log.is_dir():
         tf_log = list(tf_log.glob("events.out.tfevents.*"))[0]
 
-    plot_train_loss(tf_log)
-    plot_train_f1(tf_log)
-    plot_valid_loss(tf_log)
-    plot_valid_f1(tf_log)
+    for dataset in ['train', 'valid']:
+        plot_loss(tf_log, dataset=dataset)
+
+    metrics = {
+        'train': ['f1inv', 'recall', 'precision'],
+        'valid': ['f1inv', 'recall', 'precision'],
+    }
+    for dataset, metric_types in metrics.items():
+        for metric_type in metric_types:
+            plot_metric(tf_log, dataset, metric_type)
 
 
 if __name__ == '__main__':
