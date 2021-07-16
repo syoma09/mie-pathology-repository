@@ -202,20 +202,14 @@ def main():
         # Console write
         print("")
         print("    train loss  : {:3.3}".format(metrics['train']['loss']))
-        # print("          f1inv : {:3.3}".format(metrics['train']['cmat'].f1inv))
-        # print("          npv   : {:3.3}".format(metrics['train']['cmat'].npv))
-        # print("          tnr   : {:3.3}".format(metrics['train']['cmat'].tnr))
-        print("          f1        : {:3.3}".format(metrics['train']['cmat'].f1))
-        print("          precision : {:3.3}".format(metrics['train']['cmat'].precision))
-        print("          recall    : {:3.3}".format(metrics['train']['cmat'].recall))
+        print("          f1inv : {:3.3}".format(metrics['train']['cmat'].f1inv))
+        print("          npv   : {:3.3}".format(metrics['train']['cmat'].npv))
+        print("          tnr   : {:3.3}".format(metrics['train']['cmat'].tnr))
         print(metrics['train']['cmat'])
         print("    valid loss  : {:3.3}".format(metrics['valid']['loss']))
-        # print("          f1inv : {:3.3}".format(metrics['valid']['cmat'].f1inv))
-        # print("          npv   : {:3.3}".format(metrics['valid']['cmat'].npv))
-        # print("          tnr   : {:3.3}".format(metrics['valid']['cmat'].tnr))
-        print("          f1       : {:3.3}".format(metrics['valid']['cmat'].f1))
-        print("          precision: {:3.3}".format(metrics['valid']['cmat'].precision))
-        print("          recall   : {:3.3}".format(metrics['valid']['cmat'].recall))
+        print("          f1inv : {:3.3}".format(metrics['valid']['cmat'].f1inv))
+        print("          npv   : {:3.3}".format(metrics['valid']['cmat'].npv))
+        print("          tnr   : {:3.3}".format(metrics['valid']['cmat'].tnr))
         print("        Matrix:")
         print(metrics['valid']['cmat'])
         # Write tensorboard
@@ -223,7 +217,7 @@ def main():
             # Loss
             tensorboard.add_scalar(f"{tv}_loss", metrics[tv]['loss'], epoch)
             # For ConfusionMatrix
-            for m_name in ["f1inv", "npv", "tpr", "precision", "recall", "tn", "tp", "fn", "fp"]:
+            for m_name in ['f1', "f1inv", "npv", "tpr", "precision", "recall", "tn", "tp", "fn", "fp"]:
                 tensorboard.add_scalar(f"{tv}_{m_name}", getattr(metrics[tv]['cmat'], m_name), epoch)
 
 
