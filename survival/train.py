@@ -114,11 +114,11 @@ def main():
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
+        PatchDataset(dataset_root, annotation['train'], red=True), batch_size=64, shuffle=True,
         num_workers=os.cpu_count() // 2
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid']), batch_size=128,
+        PatchDataset(dataset_root, annotation['valid'], red=False), batch_size=128,
         num_workers=train_loader.num_workers
     )
 
@@ -127,7 +127,8 @@ def main():
     '''
     model = create_model().to(device)
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()              # Need Sigmoid
@@ -157,7 +158,7 @@ def main():
         for batch, (x, y_true) in enumerate(train_loader):
             x, y_true = x.to(device), y_true.to(device)
             y_pred = model(x)   # Forward
-            # y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
+            y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
 
             loss = criterion(y_pred, y_true)  # Calculate training loss
             optimizer.zero_grad()
@@ -186,8 +187,6 @@ def main():
             for i, (x, y_true) in enumerate(valid_loader):
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = model(x)  # Prediction
-                # y_pred = torch.sigmoid(y_pred)
-                # y_pred = torch.nn.functional.softmax(y_pred, dim=1)
 
                 loss = criterion(y_pred, y_true)  # Calculate validation loss
                 # print(loss.item())

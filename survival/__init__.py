@@ -27,7 +27,7 @@ def get_dataset_root_path(target):
 
 
 class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root: Path, annotations: list):
+    def __init__(self, root: Path, annotations: list, red=False):
         """
 
         :param root:            Path to dataset root directory
@@ -55,6 +55,10 @@ class PatchDataset(torch.utils.data.Dataset):
             ]
         # Random shuffle
         random.shuffle(self.__dataset)
+
+        if red is True:
+            data_num = len(self.__dataset) // 5
+            self.__dataset = self.__dataset[:data_num]
 
         # self.__num_class = len(set(label for _, label in self.__dataset))
         self.__num_class = 2
@@ -104,11 +108,11 @@ def create_model():
     # # VGG16: 134M params
     # # model = torchvision.models.vgg16(pretrained=True)
     # model = torchvision.models.vgg16(pretrained=False)
-    """VGG11Bn: """
-    model = torchvision.models.vgg11_bn(pretrained=True)
-    model.classifier[6] = nn.Linear(
-        model.classifier[6].in_features, out_features=2, bias=True
-    )
+    # """VGG11Bn: """
+    # model = torchvision.models.vgg11_bn(pretrained=True)
+    # model.classifier[6] = nn.Linear(
+    #     model.classifier[6].in_features, out_features=2, bias=True
+    # )
 
     # """ResNet152: 60M params"""
     # model = torchvision.models.resnet152(pretrained=False)
@@ -117,10 +121,10 @@ def create_model():
     # # model = torchvision.models.resnet50(pretrained=False)
     # model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
 
-    # # Inception-v3: 25M params
-    # model = torchvision.models.inception_v3(pretrained=False)
-    # # model.fc = nn.Linear(model.fc.in_features, 1, bias=True)
-    # model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
+    """Inception-v3: 25M params"""
+    model = torchvision.models.inception_v3(pretrained=False)
+    # model.fc = nn.Linear(model.fc.in_features, 1, bias=True)
+    model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
 
     # """DenseNet121: 58M params"""
     # model = torchvision.models.densenet121(pretrained=False)
@@ -128,7 +132,7 @@ def create_model():
     #     in_features=model.classifier.in_features, out_features=2, bias=True
     # )
 
-    print(model)
+    # print(model)
 
     # num_params = sum(param.numel() for param in model.parameters())
     # print(f"{num_params} parameters")
