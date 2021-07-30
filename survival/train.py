@@ -77,12 +77,11 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size):
 
 def main():
     # target = '3os'
-    # target = '2dfs'
-    target = 'cls'
+    target = '2dfs_v2'
+    # target = 'cls'
     patch_size = 1024, 1024
     # patch_size = 256, 256
-    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / "survival_{}_{}".format(
-        target,
+    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / "survival_{}".format(
         f"{patch_size[0]}x{patch_size[1]}"
     )
 
@@ -116,11 +115,11 @@ def main():
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train'], red=True), batch_size=64, shuffle=True,
+        PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
         num_workers=os.cpu_count() // 2
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid'], red=False), batch_size=128,
+        PatchDataset(dataset_root, annotation['valid']), batch_size=128,
         num_workers=train_loader.num_workers
     )
 
@@ -129,8 +128,8 @@ def main():
     '''
     model = create_model().to(device)
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()              # Need Sigmoid

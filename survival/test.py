@@ -4,6 +4,8 @@
 import os
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.utils.data
@@ -19,7 +21,7 @@ if torch.cuda.is_available():
 print(device)
 
 
-def evaluate(dataset_root, subjects):
+def evaluate(dataset_root, subjects, model_path):
     data_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, subjects),
         # PatchDataset(dataset_root, annotation['test']),
@@ -31,7 +33,7 @@ def evaluate(dataset_root, subjects):
     '''
     model = create_model().to(device)
     model.load_state_dict(torch.load(
-        dataset_root / "20210702_175146model00186.pth",
+        model_path,
         map_location=device
     ))
     model.eval()
@@ -61,7 +63,7 @@ def evaluate(dataset_root, subjects):
 
     # Console write
     print("    valid loss    : {:3.3}".format(metrics['loss']))
-    print("      accuracy    : {:3.3}".format(metrics['cmat'].accuracy()))
+    print("      accuracy    : {:3.3}".format(metrics['cmat'].accuracy))
     print("      f-measure   : {:3.3}".format(metrics['cmat'].f1inv))
     print("      precision   : {:3.3}".format(metrics['cmat'].npv))
     print("      specificity : {:3.3}".format(metrics['cmat'].specificity))
@@ -73,32 +75,39 @@ def evaluate(dataset_root, subjects):
 
 
 def main():
-    target = '2dfs'
+    target = '2dfs_v2'
 
     annotation = load_annotation(Path(
         f"~/workspace/mie-pathology/_data/survival_{target}.csv"
     ).expanduser())
+    model_path = Path("~/data/_out/mie-pathology/").expanduser()
 
-    # # Subject
-    # result = {}
-    # for name, cls in annotation['test']:
-    #     cmat = evaluate(
-    #         dataset_root=get_dataset_root_path(target=target),
-    #         subjects=[(name, cls)]
-    #     )
-    #
-    #     result[name] = {
-    #         "true": cls,
-    #         "pred": np.argmin([cmat.fp + cmat.tn, cmat.fp + cmat.fn]),
-    #         "rate": cmat.accuracy()
-    #     }
-    # print(result)
+    patch_size = 1024, 1024
+    model_path /= "20210730_131449/model00016.pth"
 
-    # Dataset
-    cmat = evaluate(
-        dataset_root=get_dataset_root_path(target=target),
-        subjects=annotation['valid']
-    )
+    # Subject
+    result = {}
+    for name, cls in annotation['train']:
+        cmat = evaluate(
+            dataset_root=get_dataset_root_path(patch_size=patch_size),
+            subjects=[(name, cls)],
+            model_path=model_path
+        )
+
+        result[name] = {
+            "true": cls,
+            "pred": np.argmax([cmat.tn + cmat.fn, cmat.tp + cmat.fp]),
+            "rate": cmat.accuracy
+        }
+
+    print(pd.DataFrame(result).transpose())
+
+    # # Dataset
+    # cmat = evaluate(
+    #     dataset_root=get_dataset_root_path(patch_size=patch_size),
+    #     subjects=annotation['valid'],
+    #     model_path=model_path
+    # )
 
 
 if __name__ == '__main__':

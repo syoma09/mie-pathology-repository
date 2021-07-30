@@ -13,7 +13,7 @@ def main():
     src = Path("~/workspace/mie-pathology/_data/").expanduser()
     dst = Path("~/data/_out/").expanduser()
 
-    df = pd.read_csv(src / "survival_2dfs.csv")
+    df = pd.read_csv(src / "survival_2dfs_v2.csv")
     print(df)
 
     for _, row in df.iterrows():
