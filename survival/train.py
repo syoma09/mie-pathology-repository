@@ -77,8 +77,10 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size):
 
 def main():
     # target = '3os'
-    target = '2dfs'
+    # target = '2dfs'
+    target = 'cls'
     patch_size = 1024, 1024
+    # patch_size = 256, 256
     dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / "survival_{}_{}".format(
         target,
         f"{patch_size[0]}x{patch_size[1]}"
@@ -206,7 +208,10 @@ def main():
         print("          tnr   : {:3.3}".format(metrics['train']['cmat'].tnr))
         print(metrics['train']['cmat'])
         print("    valid loss  : {:3.3}".format(metrics['valid']['loss']))
-        print("          f1inv : {:3.3}".format(metrics['valid']['cmat'].f1inv))
+        print("          f1inv : {:3.3} (f1={:3.3})".format(
+            metrics['valid']['cmat'].f1inv,
+            metrics['valid']['cmat'].f1
+        ))
         print("          npv   : {:3.3}".format(metrics['valid']['cmat'].npv))
         print("          tnr   : {:3.3}".format(metrics['valid']['cmat'].tnr))
         print("        Matrix:")
