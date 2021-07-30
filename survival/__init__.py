@@ -13,7 +13,7 @@ import torchvision
 from PIL import Image, ImageOps
 
 
-def get_dataset_root_path(target):
+def get_dataset_root_path(patch_size):
     """
 
     :return:    Dataset root Path() object
@@ -23,11 +23,16 @@ def get_dataset_root_path(target):
     # return Path("~/data/_out/mie-pathology/").expanduser()
 
     # Local SSD Cache
-    return Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / f'survival_{target}'
+    path = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
+    path /= "survival_{}".format(
+        f"{patch_size[0]}x{patch_size[1]}"
+    )
+
+    return path
 
 
 class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root: Path, annotations: list, red=False):
+    def __init__(self, root: Path, annotations: list):
         """
 
         :param root:            Path to dataset root directory
@@ -56,9 +61,10 @@ class PatchDataset(torch.utils.data.Dataset):
         # Random shuffle
         random.shuffle(self.__dataset)
 
-        if red is True:
-            data_num = len(self.__dataset) // 5
-            self.__dataset = self.__dataset[:data_num]
+        # reduce_pathces = True
+        # if reduce_pathces is True:
+        #     data_num = len(self.__dataset) // 5
+        #     self.__dataset = self.__dataset[:data_num]
 
         # self.__num_class = len(set(label for _, label in self.__dataset))
         self.__num_class = 2
@@ -93,7 +99,7 @@ class PatchDataset(torch.utils.data.Dataset):
         # # Single node output
         # target = torch.tensor([label], dtype=torch.float)
         # Convert to 1-Hot vector
-        target = [0.0] * self.__num_class
+        target = [0.0 for _ in range(self.__num_class)]
         target[label] = 1.0
         target = torch.tensor(target, dtype=torch.float)
 
