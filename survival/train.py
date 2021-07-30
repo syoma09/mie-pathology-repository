@@ -19,7 +19,7 @@ from PIL import Image, ImageOps
 
 from cnn.metrics import ConfusionMatrix
 from data.svs import save_patches
-from survival import get_dataset_root_path, PatchDataset, create_model
+from survival import load_annotation, get_dataset_root_path, PatchDataset, create_model
 
 
 # Set CUDA device
@@ -81,9 +81,7 @@ def main():
     # target = 'cls'
     patch_size = 1024, 1024
     # patch_size = 256, 256
-    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / "survival_{}".format(
-        f"{patch_size[0]}x{patch_size[1]}"
-    )
+    dataset_root = get_dataset_root_path(patch_size=patch_size)
 
     # Log, epoch-model output directory
     log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -104,15 +102,7 @@ def main():
         )
 
     # Load annotations
-    annotation = {
-        'train': [], 'valid': [], 'test': [], 'IGNORE': []
-    }
-    for _, row in pd.read_csv(annotation_path).iterrows():
-        annotation[
-            # Switch train/valid by tvt-column value (0: train, 1: valid)
-            ['train', 'valid', 'test', 'IGNORE'][int(row['tvt'])]
-        ].append((row['number'], row['label']))     # Append annotation tuple
-
+    annotation = load_annotation(annotation_path)
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
