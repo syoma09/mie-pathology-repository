@@ -36,7 +36,7 @@ with open('/proc/meminfo', 'r') as f:
     print(mem_total)
 
 
-def create_dataset(src: Path, dst: Path, annotation: Path, size):
+def create_dataset(src: Path, dst: Path, annotation: Path, size, stride):
     # Load annotation
     df = pd.read_csv(annotation)
     print(df)
@@ -59,8 +59,6 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size):
             continue
 
         base = subject_dir / 'patch'
-        # size = 512, 512
-        stride = size
         resize = 256, 256
         args.append((path_svs, path_xml, base, size, stride, resize))
 
@@ -83,8 +81,12 @@ def main():
     # target = '2dfs_v2'
     target = 'cls'
     patch_size = 1024, 1024
+    stride = 512, 512
     # patch_size = 256, 256
-    dataset_root = get_dataset_root_path(patch_size=patch_size)
+    dataset_root = get_dataset_root_path(
+        patch_size=patch_size,
+        stride=stride
+    )
 
     # Log, epoch-model output directory
     log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -102,7 +104,7 @@ def main():
         src=Path("~/workspace/mie-pathology/_data/").expanduser(),
         dst=dataset_root,
         annotation=annotation_path,
-        size=patch_size
+        size=patch_size, stride=stride
     )
 
     # Load annotations
