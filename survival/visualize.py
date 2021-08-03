@@ -3,6 +3,7 @@
 
 from pathlib import Path
 
+import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -89,10 +90,11 @@ def main():
 
     metrics = {
         'train': ['f1inv', 'recall', 'precision'],
-        'valid': ['f1inv', 'recall', 'precision'],
+        'valid': ['f1', 'f1inv', 'recall', 'precision'],
     }
     for dataset, metric_types in metrics.items():
         for metric_type in metric_types:
+            print(dataset, metric_type)
             plot_metric(tf_log, dataset, metric_type)
 
 

@@ -21,12 +21,15 @@ if torch.cuda.is_available():
 
 
 def main():
+    patch_size = 1024, 1024
+    target = 'cls'
+    # target = '2dfs'
     # target = '3os'
-    target = '2dfs'
     dataset = "valid"
     epochs = 1000
 
-    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology' / f"survival_{target}"
+    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
+    dataset_root /= f"survival_{patch_size[0]}x{patch_size[1]}"
 
     # Load annotations
     annotation = load_annotation(Path(
