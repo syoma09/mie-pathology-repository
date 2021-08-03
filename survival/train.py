@@ -45,15 +45,18 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size):
     for _, subject in df.iterrows():
         number = subject['number']
 
+        subject_dir = dst / str(number)
+        if not subject_dir.exists():
+            subject_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            print(f"Subject #{number} already exists. Skip.")
+            continue
+
         path_svs = src / "svs" / f"{number}.svs"
         path_xml = src / "xml" / f"{number}.xml"
         if not path_svs.exists() or not path_xml.exists():
             print(f"{path_svs} or {path_xml} do not exists.")
             continue
-
-        subject_dir = dst / str(number)
-        if not subject_dir.exists():
-            subject_dir.mkdir(parents=True, exist_ok=True)
 
         base = subject_dir / 'patch'
         # size = 512, 512
@@ -77,8 +80,8 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size):
 
 def main():
     # target = '3os'
-    target = '2dfs_v2'
-    # target = 'cls'
+    # target = '2dfs_v2'
+    target = 'cls'
     patch_size = 1024, 1024
     # patch_size = 256, 256
     dataset_root = get_dataset_root_path(patch_size=patch_size)
@@ -94,12 +97,13 @@ def main():
     # Create dataset if not exists
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
-        create_dataset(
-            src=Path("~/workspace/mie-pathology/_data/").expanduser(),
-            dst=dataset_root,
-            annotation=annotation_path,
-            size=patch_size
-        )
+    # Existing subjects are ignored in the function
+    create_dataset(
+        src=Path("~/workspace/mie-pathology/_data/").expanduser(),
+        dst=dataset_root,
+        annotation=annotation_path,
+        size=patch_size
+    )
 
     # Load annotations
     annotation = load_annotation(annotation_path)
