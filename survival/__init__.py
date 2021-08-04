@@ -13,7 +13,7 @@ import torchvision
 from PIL import Image, ImageOps
 
 
-def get_dataset_root_path(patch_size):
+def get_dataset_root_path(patch_size, stride):
     """
 
     :return:    Dataset root Path() object
@@ -24,8 +24,9 @@ def get_dataset_root_path(patch_size):
 
     # Local SSD Cache
     path = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
-    path /= "survival_{}".format(
-        f"{patch_size[0]}x{patch_size[1]}"
+    path /= "survival_p{}_s{}".format(
+        f"{patch_size[0]}x{patch_size[1]}",
+        f"{stride[0]}x{stride[1]}"
     )
 
     return path

@@ -80,6 +80,8 @@ def main():
     # tf_log /= "20210708_102414"
     # tf_log /= "20210714_151737"
 
+    # tf_log = Path("~/workspace/mie-pathology/survival/logs/").expanduser()
+
     print("Process log in", tf_log)
 
     if tf_log.is_dir():
