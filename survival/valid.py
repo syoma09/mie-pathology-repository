@@ -11,30 +11,32 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 
 from cnn.metrics import ConfusionMatrix
-from survival import load_annotation, PatchDataset, create_model
+from survival import load_annotation, PatchDataset, create_model, get_dataset_root_path
 
 
 # Set CUDA device
-device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
 
 def main():
-    patch_size = 1024, 1024
-    target = 'cls'
-    # target = '2dfs'
-    # target = '3os'
     dataset = "valid"
-    epochs = 1000
 
-    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
-    dataset_root /= f"survival_{patch_size[0]}x{patch_size[1]}"
+    dataset_root = get_dataset_root_path(
+        patch_size=(1024, 1024),
+        stride=(512, 512)
+    )
 
     # Load annotations
     annotation = load_annotation(Path(
-        f"~/workspace/mie-pathology/_data/survival_{target}.csv"
+        "~/workspace/mie-pathology/_data/survival_{}.csv".format(
+            'cls'
+            # '2dfs'
+            # '3os'
+        )
     ).expanduser())
+
     # Init DataLoader
     valid_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation[dataset]),
@@ -51,10 +53,13 @@ def main():
 
     tensorboard = SummaryWriter(log_dir='./logs')
 
+    epochs = 36
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
 
-        path = dataset_root / f"20210702_175146model{epoch:05}.pth"
+        path = Path("~/data/_out/mie-pathology").expanduser()
+        # path /= f"20210702_175146/model{epoch:05}.pth"
+        path /= f"20210803_165408/model{epoch:05}.pth"
         if not path.exists():
             break
 

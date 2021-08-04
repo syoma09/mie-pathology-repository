@@ -91,7 +91,7 @@ def process_subject(model, svs: SVS, size, stride, resize=None):
             p0 = int(p0[0] * ratio[0]), int(p0[1] * ratio[1])
             p1 = int(p1[0] * ratio[0]), int(p1[1] * ratio[1])
 
-            mask[p0[0]:p1[0], p0[1]:p1[1]] = 1
+            mask[p0[0]:p1[0], p0[1]:p1[1]] = pred
 
     return mask.T
 

@@ -15,7 +15,7 @@ from cnn.metrics import ConfusionMatrix
 from survival import load_annotation, get_dataset_root_path, PatchDataset, create_model
 
 
-device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 print(device)
@@ -75,7 +75,7 @@ def evaluate(dataset_root, subjects, model_path):
 
 
 def main():
-    target = '2dfs_v2'
+    target = 'cls'
 
     annotation = load_annotation(Path(
         f"~/workspace/mie-pathology/_data/survival_{target}.csv"
@@ -83,13 +83,16 @@ def main():
     model_path = Path("~/data/_out/mie-pathology/").expanduser()
 
     patch_size = 1024, 1024
-    model_path /= "20210730_131449/model00016.pth"
+    stride = 512, 512
+    # model_path /= "20210730_131449/model00016.pth"
+    # model_path /= "20210803_091002/model00036.pth"
+    model_path /= "20210803_165408/model00007.pth"
 
     # Subject
     result = {}
     for name, cls in annotation['train']:
         cmat = evaluate(
-            dataset_root=get_dataset_root_path(patch_size=patch_size),
+            dataset_root=get_dataset_root_path(patch_size=patch_size, stride=stride),
             subjects=[(name, cls)],
             model_path=model_path
         )
