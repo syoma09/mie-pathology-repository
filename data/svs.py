@@ -66,24 +66,31 @@ class SVS(object):
             for i in range(0, shape[0], stride[0]):
                 yield (i, j), (i + size[0], j + size[1])
 
-    def extract_img_mask(self, location, size):
+    def crop_img(self, location, size):
         """
-        Return image and mask at given location + size
-        :param location:
-        :param size:
-        :return:
+        :param location:    Left-upper position
+        :param size:        (width, height)
+        :return:            image given location + size
         """
-        img = self.image.slide.read_region(location, 0, size)
+        return self.image.slide.read_region(location, 0, size)
 
+    def crop_mask(self, location, size):
+        """
+        :param location:    Left-upper position
+        :param size:        (width, height)
+        :return:            Mask image of given location + size
+        """
         mask = self.mask.crop(box=(
             location[0],
             location[1],
             location[0] + size[0],
             location[1] + size[1]
         ))
-        mask = np.array(mask, dtype='uint8') * 255
 
-        return img, mask
+        return np.array(mask, dtype='uint8') * 255
+
+    def extract_img_mask(self, location, size):
+        return self.crop_img(location, size), self.crop_mask(location, size)
 
 
 class SVSImage(object):
@@ -143,15 +150,16 @@ def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None
         if Path(patch_path).exists():
             continue
 
-        # print(p0, p1)
-        img, mask = svs.extract_img_mask(p0, size)
+        mask = svs.crop_mask(p0, size)
+        if np.sum(mask) < size[0] * size[1] * 255:
+            # Ignore if the mask full-cover the patch region
+            continue
 
-        if np.sum(mask) == size[0] * size[1] * 255:
-            if resize is not None:
-                img = img.resize(resize)
+        img = svs.crop_img(p0, size)
+        if resize is not None:
+            img = img.resize(resize)
 
-            print(patch_path)
-            img.save(patch_path)
-            # Image.fromarray(mask).save(str(base) + f"{i:08}mask.png")
+        print(patch_path)
+        img.save(patch_path)
 
     del svs
