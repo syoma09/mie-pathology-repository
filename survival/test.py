@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 from torch.backends import cudnn
+from sklearn.metrics import roc_curve, roc_auc_score
+import matplotlib.pyplot as plt
 
 from cnn.metrics import ConfusionMatrix
 from survival import load_annotation, get_dataset_root_path, PatchDataset, create_model
@@ -74,6 +76,39 @@ def evaluate(dataset_root, subjects, model_path):
     return metrics['cmat']
 
 
+def plot_roc(results, path):
+    pos_label = 0
+    for dataset in ['train', 'valid', 'test']:
+        if dataset not in results:
+            continue
+
+        y_true = results[dataset]['true']
+        y_rate = results[dataset]['rate']
+
+        fpr, tpr, thresholds = roc_curve(y_true, y_rate, pos_label=pos_label)
+        auc = roc_auc_score(y_true, y_rate)
+        if pos_label == 0:
+            auc = 1 - auc
+
+        plt.plot(fpr, tpr, label=f"{dataset} (AUC={auc:.1})")
+
+    plt.title("ROC")
+    plt.xlabel('False Positive Rate (FPR)')
+    plt.ylabel('True Positive Rate (FPR)')
+    plt.axis('square')
+
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+
+    plt.grid()
+    plt.tick_params(direction='in')
+
+    plt.legend()
+
+    plt.savefig(str(path))
+    plt.close()
+
+
 def main():
     target = '2dfs'
 
@@ -90,21 +125,34 @@ def main():
     model_path /= "20210804_171325/model00003.pth"
 
     # Subject
-    result = {}
-    for name, cls in annotation['train']:
-        cmat = evaluate(
-            dataset_root=get_dataset_root_path(patch_size=patch_size, stride=stride),
-            subjects=[(name, cls)],
-            model_path=model_path
-        )
+    list_df = {}
+    for dataset in ['valid', 'train']:
+        if len(annotation[dataset]) == 0:
+            continue
 
-        result[name] = {
-            "true": cls,
-            "pred": np.argmax([cmat.tn + cmat.fn, cmat.tp + cmat.fp]),
-            "rate": cmat.accuracy
-        }
+        temp = {}
+        for name, cls in annotation[dataset]:
+            cmat = evaluate(
+                dataset_root=get_dataset_root_path(patch_size=patch_size, stride=stride),
+                subjects=[(name, cls)],
+                model_path=model_path
+            )
 
-    print(pd.DataFrame(result).transpose())
+            temp[name] = {
+                "true": cls,
+                "pred": np.argmax([cmat.tn + cmat.fn, cmat.tp + cmat.fp]),
+                "rate": cmat.accuracy
+            }
+
+        list_df[dataset] = pd.DataFrame(temp).transpose()
+        print(list_df[dataset])
+
+        # Here is ok, to over-write
+        plot_roc(list_df, "roc_test.jpg")
+
+    for key, df in list_df.items():
+        print(f"Results on {key} dataset ------------------")
+        print(df)
 
     # # Dataset
     # cmat = evaluate(
