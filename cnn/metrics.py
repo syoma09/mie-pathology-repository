@@ -6,16 +6,17 @@ import torch
 
 
 class ConfusionMatrix(object):
+    """
+    +----------------+---------------------+
+    |                |     Prediction      |
+    |                | positive | negative |
+    +--------+-------+----------+----------+
+    | Ground | true  |    TP    |    FN    |
+    | Truth  | false |    FP    |    TN    |
+    +--------+-------+----------+----------+
+    """
+
     def __init__(self, y_pred, y_true):
-        """
-        +----------------+---------------------+
-        |                |     Prediction      |
-        |                | positive | negative |
-        +--------+-------+----------+----------+
-        | Ground | true  |    TP    |    FN    |
-        | Truth  | false |    FP    |    TN    |
-        +--------+-------+----------+----------+
-        """
         # self._mat[y_pred, y_true]
         #   positive: 1
         #   negative: 0
@@ -27,7 +28,9 @@ class ConfusionMatrix(object):
             # print(y_true)
             # print(torch.max(y_true, dim=1))
             y_pred = torch.max(y_pred, dim=1)[1]    # argmax
-            # y_true = torch.max(y_true, dim=1)[1]    # argmax
+            y_true = torch.max(y_true, dim=1)[1]    # argmax
+            # print(y_pred)
+            # print(y_true)
             for p, q in zip(y_pred, y_true):
                 self._mat[p, q] += 1
 
@@ -61,19 +64,58 @@ class ConfusionMatrix(object):
     def item(self):
         return self
 
+    @property
+    def tpr(self):
+        """True-positive rate"""
+        return self.tp / (self.tp + self.fn + 1e-8)
+
+    @property
+    def fpr(self):
+        """False-positive rate"""
+        return self.fp / (self.fp + self.tn + 1e-8)
+
+    @property
+    def tnr(self):
+        """True-negative rate"""
+        return self.tn / (self.tn + self.fp + 1e-8)
+
+    @property
+    def ppv(self):
+        """positive predictive value"""
+        return self.tp / (self.tp + self.fp + 1e-8)
+
+    @property
+    def npv(self):
+        """negative predictive value"""
+        return self.tn / (self.fn + self.tn + 1e-8)
+
+    @property
     def accuracy(self):
         return (self.tp + self.tn) / (self.tp + self.fp + self.fn + self.tn)
 
+    @property
     def precision(self):
-        return self.tp / (self.tp + self.fp + 1e-8)
+        return self.ppv
 
+    @property
     def recall(self):
-        return self.tp / (self.tp + self.fn + 1e-8)
+        return self.tpr
 
+    @property
+    def specificity(self):
+        return self.tnr
+
+    @property
     def f1(self):
-        p = self.precision()
-        r = self.recall()
-        return 2 * p * r / (p + r + 1e-8)
+        ppv = self.ppv
+        tpr = self.tpr
+        return 2 * ppv * tpr / (ppv + tpr + 1e-8)
+
+    @property
+    def f1inv(self):
+        npv = self.npv
+        tnr = self.tnr
+        return 2 * npv * tnr / (npv + tnr + 1e-8)
 
 
 # class Accuracy(ConfusionMatrix):
