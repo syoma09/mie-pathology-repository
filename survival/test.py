@@ -75,7 +75,7 @@ def evaluate(dataset_root, subjects, model_path):
 
 
 def main():
-    target = 'cls'
+    target = '2dfs'
 
     annotation = load_annotation(Path(
         f"~/workspace/mie-pathology/_data/survival_{target}.csv"
@@ -86,7 +86,8 @@ def main():
     stride = 512, 512
     # model_path /= "20210730_131449/model00016.pth"
     # model_path /= "20210803_091002/model00036.pth"
-    model_path /= "20210803_165408/model00007.pth"
+    # model_path /= "20210803_165408/model00007.pth"
+    model_path /= "20210804_171325/model00003.pth"
 
     # Subject
     result = {}
