@@ -66,24 +66,31 @@ class SVS(object):
             for i in range(0, shape[0], stride[0]):
                 yield (i, j), (i + size[0], j + size[1])
 
-    def extract_img_mask(self, location, size):
+    def crop_img(self, location, size):
         """
-        Return image and mask at given location + size
-        :param location:
-        :param size:
-        :return:
+        :param location:    Left-upper position
+        :param size:        (width, height)
+        :return:            image given location + size
         """
-        img = self.image.slide.read_region(location, 0, size)
+        return self.image.slide.read_region(location, 0, size)
 
+    def crop_mask(self, location, size):
+        """
+        :param location:    Left-upper position
+        :param size:        (width, height)
+        :return:            Mask image of given location + size
+        """
         mask = self.mask.crop(box=(
             location[0],
             location[1],
             location[0] + size[0],
             location[1] + size[1]
         ))
-        mask = np.array(mask, dtype='uint8') * 255
 
-        return img, mask
+        return np.array(mask, dtype='uint8') * 255
+
+    def extract_img_mask(self, location, size):
+        return self.crop_img(location, size), self.crop_mask(location, size)
 
 
 class SVSImage(object):
@@ -119,3 +126,40 @@ class SVSAnnotation(object):
         :return:    vertices in pixel
         """
         return self._vertices
+
+
+def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None):
+    """
+
+    :param path_svs:    Path to image svs
+    :param path_xml:    Path to contour xml
+    :param base:        Base string of output file name
+    :param size:        Patch size
+    :param stride:      Patch stride
+    :param resize:      Resize extracted patch
+    :return:        None
+    """
+
+    svs = SVS(
+        path_svs,
+        annotation=path_xml
+    )
+
+    for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
+        patch_path = str(base) + f"{i:08}img.png"
+        if Path(patch_path).exists():
+            continue
+
+        mask = svs.crop_mask(p0, size)
+        if np.sum(mask) < size[0] * size[1] * 255:
+            # Ignore if the mask full-cover the patch region
+            continue
+
+        img = svs.crop_img(p0, size)
+        if resize is not None:
+            img = img.resize(resize)
+
+        print(patch_path)
+        img.save(patch_path)
+
+    del svs

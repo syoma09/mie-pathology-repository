@@ -4,3 +4,5 @@ venv10/
 
 .idea/
 logs/
+
+*.jpg
