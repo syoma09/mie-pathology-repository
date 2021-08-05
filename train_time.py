@@ -49,19 +49,19 @@ class WeightedProbLoss(nn.Module):
 
 
 def main():
-    root = Path("~/data/_out/").expanduser()
-
+    #root = Path("~/data/_out/").expanduser()
+    dataset_root = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'train'), batch_size=batch_size, shuffle=True,
+        PatchDataset(dataset_root / 'train'), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(root / 'valid'), batch_size=batch_size,
+        PatchDataset(dataset_root / 'valid'), batch_size=batch_size,
         num_workers=num_workers
     )
 
