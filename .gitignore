@@ -6,3 +6,5 @@ venv10/
 logs/
 
 *.jpg
+graph/*.jpg
+*.png
