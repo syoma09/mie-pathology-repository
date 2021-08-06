@@ -77,9 +77,6 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size, stride):
 
 
 def main():
-    # target = '3os'
-    # target = '2dfs'
-    target = 'cls_cv'
     patch_size = 1024, 1024
     stride = 512, 512
     # patch_size = 256, 256
@@ -93,7 +90,13 @@ def main():
     log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
-        f"~/workspace/mie-pathology/_data/survival_{target}.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls.csv"
+        # f"~/workspace/mie-pathology/_data/survival_2dfs.csv"
+        # f"~/workspace/mie-pathology/_data/survival_3os.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv0.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv1.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv2.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
