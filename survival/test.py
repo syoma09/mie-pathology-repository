@@ -142,7 +142,8 @@ def main():
             temp[name] = {
                 "true": cls,
                 "pred": np.argmax([cmat.tn + cmat.fn, cmat.tp + cmat.fp]),
-                "rate": cmat.accuracy
+                # Probability of un-survival (label==0)
+                "rate": (cmat.tn + cmat.fn) / (cmat.tn + cmat.fn + cmat.tp + cmat.fp)
             }
 
         list_df[dataset] = pd.DataFrame(temp).transpose()
