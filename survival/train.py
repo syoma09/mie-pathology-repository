@@ -78,8 +78,8 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size, stride):
 
 def main():
     # target = '3os'
-    # target = '2dfs_v2'
-    target = 'cls'
+    # target = '2dfs'
+    target = 'cls_cv'
     patch_size = 1024, 1024
     stride = 512, 512
     # patch_size = 256, 256

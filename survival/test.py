@@ -110,7 +110,7 @@ def plot_roc(results, path):
 
 
 def main():
-    target = '2dfs'
+    target = 'cls_cv'
 
     annotation = load_annotation(Path(
         f"~/workspace/mie-pathology/_data/survival_{target}.csv"
@@ -122,7 +122,8 @@ def main():
     # model_path /= "20210730_131449/model00016.pth"
     # model_path /= "20210803_091002/model00036.pth"
     # model_path /= "20210803_165408/model00007.pth"
-    model_path /= "20210804_171325/model00003.pth"
+    # model_path /= "20210804_171325/model00003.pth"
+    model_path /= "20210805_114226/model00004.pth"
 
     # Subject
     list_df = {}
