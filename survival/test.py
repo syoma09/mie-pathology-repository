@@ -110,20 +110,25 @@ def plot_roc(results, path):
 
 
 def main():
-    target = 'cls_cv'
-
-    annotation = load_annotation(Path(
-        f"~/workspace/mie-pathology/_data/survival_{target}.csv"
-    ).expanduser())
-    model_path = Path("~/data/_out/mie-pathology/").expanduser()
-
     patch_size = 1024, 1024
     stride = 512, 512
-    # model_path /= "20210730_131449/model00016.pth"
-    # model_path /= "20210803_091002/model00036.pth"
-    # model_path /= "20210803_165408/model00007.pth"
-    # model_path /= "20210804_171325/model00003.pth"
-    model_path /= "20210805_114226/model00004.pth"
+
+    annotation = load_annotation(Path(
+        # f"~/workspace/mie-pathology/_data/survival_cls.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv0.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv1.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv2.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
+    ).expanduser())
+
+    model_path = Path(
+        # "~/data/_out/mie-pathology/20210806_135428/model00073.pth"  # cls-cv0
+        # "~/data/_out/mie-pathology/20210808_234140/model00006.pth"  # cls-cv1
+        # "~/data/_out/mie-pathology/20210811_104309/model00057.pth"  # cls-cv2
+        "~/data/_out/mie-pathology/20210813_224753/model00005.pth"  # cls-cv3
+    ).expanduser()
+
+    # model_path /= "20210813_224753/model00005.pth"
 
     # Subject
     list_df = {}
