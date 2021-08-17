@@ -50,6 +50,7 @@ def plot_loss(log: Path, dataset):
 def plot_metric(path: Path, dataset, metric_type):
     tag = f"{dataset}_{metric_type}"
     data = get_tb_value(path, tag)
+    print("  max:", max(data), "@", np.argmax(data))
 
     plt.plot(
         list(range(len(data))), data
@@ -74,11 +75,13 @@ def plot_metric(path: Path, dataset, metric_type):
 def main():
     tf_log = Path("~/data/_out/mie-pathology").expanduser()
 
-    # Find latest logging directory
-    tf_log = sorted(tf_log.iterdir())[-1]
+    # # Find latest logging directory
+    # tf_log = sorted(tf_log.iterdir())[-1]
     # Or manually select
-    # tf_log /= "20210708_102414"
-    # tf_log /= "20210714_151737"
+    # tf_log /= "20210806_135428"
+    # tf_log /= "20210808_234140"
+    # tf_log /= "20210811_104309"
+    tf_log /= "20210813_224753"
 
     # tf_log = Path("~/workspace/mie-pathology/survival/logs/").expanduser()
 
