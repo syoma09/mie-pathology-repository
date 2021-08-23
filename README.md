@@ -44,4 +44,3 @@ $ sudo apt install -y libopenslide-dev
 ```shell-session
 $ pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 ```
-
