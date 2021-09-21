@@ -19,7 +19,7 @@ from PIL import ImageFile
 from cnn.metrics import ConfusionMatrix
 
 
-device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 print(device)
@@ -142,34 +142,27 @@ def main():
     )
     net = create_model().to(device)
     net.load_state_dict(torch.load(
-    dataset_root / '20210715_152352model00177.pth' , map_location=device))
+    dataset_root / '20210706_233358model00000.pth', map_location=device))
     fig ,ax = plt.subplots()
     d_today = datetime.date.today()
     with torch.no_grad():
         net.eval()
         y_true_plot = []
         y_pred_plot = []
+        j = 0
         for batch,(x, y_true) in enumerate(valid_loader):
+            j += 1
+            print(j)
             x,y_true = x.to(device), y_true.to(device)
             y_pred = net(x)   # Forward
-            print(y_pred.cpu().numpy().flatten().tolist())
-            j = 0.
-            k = 0.
-            y_pred_num = 0.
-            y_true_num = 0.
-            for j in y_true.cpu().numpy().tolist():
-                y_true_num += j
-            for k in y_pred.cpu().numpy().flatten().tolist():
-                y_pred_num += k
-            y_true_plot.append(y_true_num / y_true.numel())
-            y_pred_plot.append(y_pred_num / y_pred.numel())
-        i = 0
+            y_true_plot.append(y_true.cpu().numpy().tolist())
+            y_pred_plot.append(y_pred.cpu().numpy().flatten().tolist())
+        i = 1
         for i in range(len(y_true_plot)):
-            print(y_true_plot)
-            print(y_pred_plot)
+            print(i)
             ax.plot(y_true_plot[i],y_pred_plot[i],'.')
-            fig.savefig(f'valid{d_today}00177.png')
-        print(f'valid00177.png')
+            fig.savefig(f'valid{d_today}00000.png')
+        print(f'valid00000.png')
 
 if __name__ == '__main__':
     main()
