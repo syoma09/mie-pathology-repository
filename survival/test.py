@@ -109,39 +109,74 @@ def plot_roc(results, path):
     plt.close()
 
 
+def filter_images(patient, annotation):
+    """
+
+    :param patient:
+    :param annotation:
+    :return:
+    """
+
+    return [
+        (name, cls)
+        for name, cls in annotation
+        if name.startswith(patient)
+    ]
+
+
 def main():
-    target = '2dfs'
-
-    annotation = load_annotation(Path(
-        f"~/workspace/mie-pathology/_data/survival_{target}.csv"
-    ).expanduser())
-    model_path = Path("~/data/_out/mie-pathology/").expanduser()
-
     patch_size = 1024, 1024
     stride = 512, 512
-    # model_path /= "20210730_131449/model00016.pth"
-    # model_path /= "20210803_091002/model00036.pth"
-    # model_path /= "20210803_165408/model00007.pth"
-    model_path /= "20210804_171325/model00003.pth"
+
+    annotation = load_annotation(Path(
+        # f"~/workspace/mie-pathology/_data/survival_cls.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls/cv0.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv1.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv2.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
+    ).expanduser())
+
+    model_path = Path(
+        "~/data/_out/mie-pathology/20210806_135428/model00073.pth"  # cls-cv0
+        # "~/data/_out/mie-pathology/20210808_234140/model00006.pth"  # cls-cv1
+        # "~/data/_out/mie-pathology/20210811_104309/model00057.pth"  # cls-cv2
+        # "~/data/_out/mie-pathology/20210813_224753/model00005.pth"  # cls-cv3
+    ).expanduser()
+
+    # model_path /= "20210813_224753/model00005.pth"
+
+    annotation_patient = {
+        dataset: sorted(set([
+            (name.split('-')[0], cls)
+            for name, cls in values
+        ])) for dataset, values in annotation.items()
+    }
 
     # Subject
     list_df = {}
-    for dataset in ['valid', 'train']:
+    for dataset in ['valid']:
         if len(annotation[dataset]) == 0:
             continue
+        # print(annotation[dataset])
 
         temp = {}
         for name, cls in annotation[dataset]:
+            subjects = [(name, cls)]
+        # for name, cls in annotation_patient[dataset]:
+        #     subjects = filter_images(name, annotation[dataset])
+            print(subjects)
+
             cmat = evaluate(
                 dataset_root=get_dataset_root_path(patch_size=patch_size, stride=stride),
-                subjects=[(name, cls)],
+                subjects=subjects,
                 model_path=model_path
             )
 
             temp[name] = {
                 "true": cls,
                 "pred": np.argmax([cmat.tn + cmat.fn, cmat.tp + cmat.fp]),
-                "rate": cmat.accuracy
+                # Probability of un-survival (label==0)
+                "rate": (cmat.tn + cmat.fn) / (cmat.tn + cmat.fn + cmat.tp + cmat.fp)
             }
 
         list_df[dataset] = pd.DataFrame(temp).transpose()
