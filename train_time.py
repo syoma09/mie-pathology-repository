@@ -103,6 +103,32 @@ class PatchDataset(torch.utils.data.Dataset):
 #         c_true = torch.argmax(true)
 #
 #         return torch.abs(c_pred - c_true)
+def Mean_Variance_train(y_pred,y_true):
+    p = softmax(y_pred.cpu().tolist(),0) # caliculate typical osftmax probability Eq.1
+    y_train_m = numpy.zeros(len(y_pred)) 
+    y_train_v = numpy.zeros(len(y_pred))
+    for i in range((len(y_pred))):
+        j = i%4 # caliculate class label weight
+        y_train_m[i] = j * p[i] # Eq.2
+        y_train_v[i] = p[i] * pow(j-y_train_m[i],2) # Eq.3
+    #print("y_train_m:", y_train_m)
+    #print('')
+    #Type transgormation list to tensor
+    y_train_m_tensor = torch.tensor((y_train_m).T, device = device,dtype = torch.float32 ,requires_grad=True)
+    y_train_v_tensor = torch.tensor((y_train_v).T, device = device,dtype = torch.float32 ,requires_grad=True)
+    y_train_s_tensor = torch.tensor(numpy.log(1/p), device = device,dtype = torch.float32 ,requires_grad=True)
+    #print("y_train_m_tensor:",y_train_m_tensor)
+    #print('')
+    criterion = nn.MSELoss()   # 
+    loss_m = criterion(y_train_m_tensor,y_true) # # Calculate training  mean loss Eq.4
+    loss_v = torch.mean(y_train_v_tensor)  # Calculate training varianceloss Eq.5
+    #print("y_train_v_tensor:",y_train_v_tensor)
+    #print('')
+    #print("loss_v:",loss_v)
+    loss_s = torch.mean(y_true.view(-1,1)*y_train_s_tensor) #Caliculate SoftmaxLoss Eq.6
+    return loss_s,loss_m,loss_v
+
+
 def main():
     src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
     dataset_root = Path("~/root/mnt/cache").expanduser() / os.environ.get('USER'                                                                                                                                    ) / 'mie-pathology'
@@ -155,7 +181,7 @@ def main():
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()
 
-    criterion = nn.MSELoss()
+    #criterion = nn.MSELoss()
     tensorboard = SummaryWriter(log_dir='./logs')
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
@@ -174,40 +200,19 @@ def main():
             y_pred = net(x)   # Forward
             #print("yp:", y_pred)
             #print("yt:", y_true)
-            p = softmax(y_pred.cpu().tolist(),0)
-            y_train_m = numpy.zeros(len(y_pred))
-            y_train_v = numpy.zeros(len(y_pred))
-            for i in range((len(y_pred))):
-                j = i%4
-                y_train_m[i] = j * p[i]
-                y_train_v[i] = p[i] * pow(j-y_train_m[i],2)
-            #print("y_train_m:", y_train_m)
-            #print('')
-            y_train_m_tensor = torch.tensor((y_train_m).T, device = device,dtype = torch.float32 ,requires_grad=True)
-            y_train_v_tensor = torch.tensor((y_train_v).T, device = device,dtype = torch.float32 ,requires_grad=True)
-            y_train_s_tensor = torch.tensor(numpy.log(1/p), device = device,dtype = torch.float32 ,requires_grad=True)
-            #print("y_train_s_tensor:",y_train_s_tensor)
-            #print('')
-            loss_m = criterion(y_train_m_tensor,y_true) / 2  # Calculate training  mean loss
-            loss_v = torch.mean(y_train_v_tensor)  # Calculate training varianceloss
-            #print("y_train_v_tensor:",y_train_v_tensor)
-            #print('')
-            #print("loss_v:",loss_v)
-            s = y_true.view(-1,1)*y_train_s_tensor
-            #print("s:",s)
-            #print('')
-            loss_s = torch.mean(y_true.view(-1,1)*y_train_s_tensor)
-            #print("loss_s:",loss_s)
-            # Backward propagation
-            loss_m.backward()
-            loss_v.backward()
-            loss_s.backward()
-            optimizer.step()    # Update parameters
+            answer = Mean_Variance_train(y_pred,y_true) 
+            loss_s = answer[0]
+            loss_m = answer[1]
+            loss_v = answer[2]
             # Logging
             train_loss_s += loss_s.item() / len(train_loader)
             train_loss_m += loss_m.item() / len(train_loader)
             train_loss_v += loss_v.item() / len(train_loader)
-            train_loss += train_loss_s + 0.1 * train_loss_m  + 0.05 * train_loss_v # lamda1 = 0.1,lamda2 = 0.05
+            train_loss += train_loss_s + 0.1 * train_loss_m  + 0.05 * train_loss_v # two hyper-parameters lamda1 = 0.1,lamda2 = 0.05 Eq.6
+            train_loss_tensor = torch.tensor(train_loss, device = device,dtype = torch.float32 ,requires_grad=True)
+            # Backward propagation
+            train_loss_tensor.backward()
+            optimizer.step()    # Update parameters
             print("train_loss:",train_loss)
             print("\r  Batch({:6}/{:6})[{}]: loss_s={:.4} loss_m={:.4} loss_v={:.4}".format(
                 batch, len(train_loader),
