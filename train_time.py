@@ -104,28 +104,33 @@ class PatchDataset(torch.utils.data.Dataset):
 #
 #         return torch.abs(c_pred - c_true)
 def Mean_Variance_train(y_pred,y_true):
-    p = softmax(y_pred.cpu().tolist(),0) # caliculate typical osftmax probability Eq.1
+    p = softmax(y_pred.cpu().detach().numpy(),1) # caliculate typical Softmax probability Eq.1
     y_train_m = numpy.zeros(len(y_pred)) 
     y_train_v = numpy.zeros(len(y_pred))
     for i in range((len(y_pred))):
-        j = i%4 # caliculate class label weight
-        y_train_m[i] = j * p[i] # Eq.2
-        y_train_v[i] = p[i] * pow(j-y_train_m[i],2) # Eq.3
+        for j in range (4): # class label
+            y_train_m[i] += j/10.0 * p[i][j] # Eq.2
+        j = 0
+        for j in range (4): # class label 
+            y_train_v[i] += p[i][j] * pow(j/10.0-y_train_m[i],2) # Eq.3
     #print("y_train_m:", y_train_m)
     #print('')
-    #Type transgormation list to tensor
-    y_train_m_tensor = torch.tensor((y_train_m).T, device = device,dtype = torch.float32 ,requires_grad=True)
-    y_train_v_tensor = torch.tensor((y_train_v).T, device = device,dtype = torch.float32 ,requires_grad=True)
-    y_train_s_tensor = torch.tensor(numpy.log(1/p), device = device,dtype = torch.float32 ,requires_grad=True)
-    #print("y_train_m_tensor:",y_train_m_tensor)
-    #print('')
+    #Type transformation numpy to tensor
+    y_train_m_tensor = torch.tensor(y_train_m, device = device,dtype = torch.float32 ,requires_grad=True)
+    y_train_v_tensor = torch.tensor(y_train_v, device = device,dtype = torch.float32 ,requires_grad=True)
+    y_train_s_tensor = torch.tensor(numpy.log(p), device = device,dtype = torch.float32 ,requires_grad=True)
     criterion = nn.MSELoss()   # 
-    loss_m = criterion(y_train_m_tensor,y_true) # # Calculate training  mean loss Eq.4
+    loss_m = criterion(y_train_m_tensor,y_true) / 2.0 # Calculate training  mean loss Eq.4
     loss_v = torch.mean(y_train_v_tensor)  # Calculate training varianceloss Eq.5
-    #print("y_train_v_tensor:",y_train_v_tensor)
-    #print('')
-    #print("loss_v:",loss_v)
-    loss_s = torch.mean(y_true.view(-1,1)*y_train_s_tensor) #Caliculate SoftmaxLoss Eq.6
+    loss_s_np = numpy.zeros(len(y_true))
+    i = 0
+    j = 0
+    for i in range ((len(y_pred))):
+        for j in range (4):
+            loss_s_np[i] += y_true.cpu().detach().numpy()[i]*y_train_s_tensor.cpu().detach().numpy()[i][j] #Caliculate Cross-entropy Loss Eq.6
+        loss_s_np[i] /= 4.0
+    loss_s_tensor = torch.tensor(loss_s_np, device = device,dtype = torch.float32 ,requires_grad=True)
+    loss_s = torch.mean(loss_s_tensor)
     return loss_s,loss_m,loss_v
 
 
@@ -171,17 +176,18 @@ def main():
     num_features = net.fc.in_features
         # print(num_features)  # 512
     net.fc = nn.Sequential(
-        nn.Linear(num_features, 1, bias=True),
-    )
+        nn.Linear(num_features, 4, bias=True),
+        #nn.Softmax(dim = 0)
+        )
     net = net.to(device)
     # net = torch.nn.DataParallel(net).to(device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-    #optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
+    #optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()
 
-    #criterion = nn.MSELoss()
+    criterion = nn.MSELoss()
     tensorboard = SummaryWriter(log_dir='./logs')
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
@@ -199,7 +205,7 @@ def main():
             x, y_true = x.to(device), y_true.to(device)
             y_pred = net(x)   # Forward
             #print("yp:", y_pred)
-            #print("yt:", y_true)
+            print("yt:", y_true)
             answer = Mean_Variance_train(y_pred,y_true) 
             loss_s = answer[0]
             loss_m = answer[1]
@@ -208,7 +214,7 @@ def main():
             train_loss_s += loss_s.item() / len(train_loader)
             train_loss_m += loss_m.item() / len(train_loader)
             train_loss_v += loss_v.item() / len(train_loader)
-            train_loss += train_loss_s + 0.1 * train_loss_m  + 0.05 * train_loss_v # two hyper-parameters lamda1 = 0.1,lamda2 = 0.05 Eq.6
+            train_loss += -1 * train_loss_s + 0.1 * train_loss_m  + 0.05 * train_loss_v # two hyper-parameters lamda1 = 0.1,lamda2 = 0.05 Eq.6
             train_loss_tensor = torch.tensor(train_loss, device = device,dtype = torch.float32 ,requires_grad=True)
             # Backward propagation
             train_loss_tensor.backward()
@@ -240,14 +246,14 @@ def main():
             for x, y_true in valid_loader:
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
-                loss = criterion(y_pred, y_true)  # Calculate validation loss
+                #loss = criterion(y_pred, y_true)  # Calculate validation loss
                 # print(loss.item())
-                metrics['valid']['loss'] += loss.item() / len(valid_loader)
+                #metrics['valid']['loss'] += loss.item() / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
             for x, y_true in train_loader:
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
-                metrics['train']['loss'] += criterion(y_pred, y_true).item() / len(train_loader)
+                #metrics['train']['loss'] += criterion(y_pred, y_true).item() / len(train_loader)
                 # metrics['train']['cmat'] += ConfusionMatrix(y_pred, y_true)
         # # Console write
         # print("    train loss: {:3.3}".format(metrics['train']['loss']))
@@ -260,7 +266,7 @@ def main():
         # print(metrics['valid']['cmat'])
         # Write tensorboard
         tensorboard.add_scalar('train_loss', train_loss, epoch)
-        tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
+        #tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
         # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 if __name__ == '__main__':
