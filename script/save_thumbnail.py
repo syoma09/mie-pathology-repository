@@ -24,7 +24,8 @@ def main():
             src / "xml" / f"{subject}.xml"
         )
 
-        save_thumbnail(svs, str(dst / f"test-{subject}.jpg"))
+        # save_thumbnail(svs, str(dst / f"test-{subject}.jpg"))
+        print(svs.image.slide.dimensions)
 
 
 if __name__ == '__main__':

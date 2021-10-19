@@ -113,14 +113,15 @@ def main():
     # Load annotations
     annotation = load_annotation(annotation_path)
     # データ読み込み
-    train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
-        num_workers=os.cpu_count() // 2
-    )
+    # train_loader = torch.utils.data.DataLoader(
+    #     PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
+    #     num_workers=os.cpu_count() // 2
+    # )
     valid_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['valid']), batch_size=128,
-        num_workers=train_loader.num_workers
+        num_workers=os.cpu_count() // 2
     )
+    exit(0)
 
     '''
     モデルの構築
