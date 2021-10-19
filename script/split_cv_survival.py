@@ -7,8 +7,7 @@ import numpy as np
 import pandas as pd
 
 
-def count_subject_image(df):
-    """
+def count_subject_image(df): """
     Count number of images corresponding to a subject
     :param df:
     :return:
