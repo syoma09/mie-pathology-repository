@@ -4,6 +4,7 @@ venv10/
 
 .idea/
 logs/
+pngfile/
 
 *.jpg
 graph/*.jpg
