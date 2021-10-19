@@ -90,13 +90,13 @@ def main():
     log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
-        # f"~/workspace/mie-pathology/_data/survival_cls.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls2.csv"
         # f"~/workspace/mie-pathology/_data/survival_2dfs.csv"
         # f"~/workspace/mie-pathology/_data/survival_3os.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls/cv0.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls/cv1.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls/cv2.csv"
-        f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
