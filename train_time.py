@@ -135,10 +135,12 @@ def Mean_Variance_train(y_pred,y_true):
 
 
 def main():
-    src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
-    dataset_root = Path("~/root/mnt/cache").expanduser() / os.environ.get('USER'                                                                                                                                    ) / 'mie-pathology'
+    # echo $HOME == ~
+    src = Path("~/workspace/mie-pathology/_data/").expanduser()
+    # Write dataset on SSD (/mnt/cache/)
+    dataset_root = Path("/mnt/cache").expanduser() / os.environ.get('USER') / 'mie-pathology'
     if not dataset_root.exists():
-        dataset_root.mkdir(parents=True,exist_ok=True)
+        dataset_root.mkdir(parents=True, exist_ok=True)
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
