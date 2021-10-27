@@ -90,6 +90,10 @@ def main():
     if tf_log.is_dir():
         tf_log = list(tf_log.glob("events.out.tfevents.*"))[0]
 
+    data = get_tb_value(tf_log, f"valid_f1")
+    print(data)
+    exit(0)
+
     for dataset in ['train', 'valid']:
         plot_loss(tf_log, dataset=dataset)
 
