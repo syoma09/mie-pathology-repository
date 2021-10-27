@@ -90,13 +90,13 @@ def main():
     log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
-        # f"~/workspace/mie-pathology/_data/survival_cls.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls2.csv"
         # f"~/workspace/mie-pathology/_data/survival_2dfs.csv"
         # f"~/workspace/mie-pathology/_data/survival_3os.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls/cv0.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls/cv1.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls/cv2.csv"
-        f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
@@ -113,14 +113,15 @@ def main():
     # Load annotations
     annotation = load_annotation(annotation_path)
     # データ読み込み
-    train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
-        num_workers=os.cpu_count() // 2
-    )
+    # train_loader = torch.utils.data.DataLoader(
+    #     PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
+    #     num_workers=os.cpu_count() // 2
+    # )
     valid_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['valid']), batch_size=128,
-        num_workers=train_loader.num_workers
+        num_workers=os.cpu_count() // 2
     )
+    exit(0)
 
     '''
     モデルの構築
