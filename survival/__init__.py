@@ -42,7 +42,8 @@ class PatchDataset(torch.utils.data.Dataset):
         super(PatchDataset, self).__init__()
 
         self.transform = torchvision.transforms.Compose([
-            torchvision.transforms.Resize(299),
+            # torchvision.transforms.Resize(299),
+            torchvision.transforms.Resize(380),
             torchvision.transforms.CenterCrop(299),
             torchvision.transforms.ToTensor(),
             torchvision.transforms.Normalize(
@@ -108,18 +109,14 @@ class PatchDataset(torch.utils.data.Dataset):
 
 
 def create_model():
-    """
-
-    :return:    None
-    """
     # # VGG16: 134M params
     # # model = torchvision.models.vgg16(pretrained=True)
     # model = torchvision.models.vgg16(pretrained=False)
-    # """VGG11Bn: """
-    # model = torchvision.models.vgg11_bn(pretrained=True)
-    # model.classifier[6] = nn.Linear(
-    #     model.classifier[6].in_features, out_features=2, bias=True
-    # )
+    # # """VGG11Bn: """
+    # # model = torchvision.models.vgg11_bn(pretrained=True)
+    # # model.classifier[6] = nn.Linear(
+    # #     model.classifier[6].in_features, out_features=2, bias=True
+    # # )
 
     # """ResNet152: 60M params"""
     # model = torchvision.models.resnet152(pretrained=False)
@@ -128,10 +125,10 @@ def create_model():
     # # model = torchvision.models.resnet50(pretrained=False)
     # model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
 
-    """Inception-v3: 25M params"""
-    model = torchvision.models.inception_v3(pretrained=False)
-    # model.fc = nn.Linear(model.fc.in_features, 1, bias=True)
-    model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
+    # """Inception-v3: 25M params"""
+    # model = torchvision.models.inception_v3(pretrained=False)
+    # # model.fc = nn.Linear(model.fc.in_features, 1, bias=True)
+    # model.fc = nn.Linear(model.fc.in_features, 2, bias=True)
 
     # """DenseNet121: 58M params"""
     # model = torchvision.models.densenet121(pretrained=False)
@@ -139,12 +136,33 @@ def create_model():
     #     in_features=model.classifier.in_features, out_features=2, bias=True
     # )
 
+    """EfficientNet-b0: 4M params"""
+    model = torchvision.models.efficientnet_b0(pretrained=True)
+    # model = torchvision.models.efficientnet_b0(pretrained=False)
+    model.classifier = nn.Sequential(
+        nn.Dropout(p=0.2, inplace=True),
+        nn.Linear(in_features=1280, out_features=2, bias=True)
+    )
+    # """EfficientNet-b1: 6M params"""
+    # model = torchvision.models.efficientnet_b1(pretrained=True)
+    # model.classifier = nn.Sequential(
+    #     # nn.Dropout(p=0.2, inplace=True),
+    #     model.classifier[0],
+    #     nn.Linear(in_features=1280, out_features=2, bias=True)
+    # )
+    # """EfficientNet-b4: 17M params"""
+    # model = torchvision.models.efficientnet_b4(pretrained=True)
+    # model.classifier = nn.Sequential(
+    #     nn.Dropout(p=0.4, inplace=True),
+    #     nn.Linear(in_features=1792, out_features=2, bias=True)
+    # )
+
     # print(model)
 
-    # num_params = sum(param.numel() for param in model.parameters())
-    # print(f"{num_params} parameters")
-    # print(f"{num_params // 1000}K parameters")
-    # print(f"{num_params // 1000000}M parameters")
+    num_params = sum(param.numel() for param in model.parameters())
+    print(f"{num_params} parameters")
+    print(f"{num_params // 1000}K parameters")
+    print(f"{num_params // 1000000}M parameters")
 
     # exit(0)
     return model
