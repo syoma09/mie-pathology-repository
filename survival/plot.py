@@ -87,9 +87,11 @@ def main():
     # tf_log /= "20211021_w1024s512cv0"
     # tf_log /= "20211025_w1024s512cv1"
     # tf_log /= "20211026_w1024s512cv2"
-    tf_log /= "20211028_w1024s512cv3"
+    # tf_log /= "20211028_w1024s512cv3"
     # tf_log /= "20211029_230414"
     # tf_log /= "20211030_194555"
+    """Exp @2021/12"""
+    tf_log /= "20211203_w1024s512cv3"
 
     # tf_log = Path("~/workspace/mie-pathology/survival/logs/").expanduser()
 

@@ -27,7 +27,7 @@ def evaluate(dataset_root, subjects, model_path):
     data_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, subjects),
         # PatchDataset(dataset_root, annotation['test']),
-        batch_size=384, shuffle=True, num_workers=os.cpu_count() // 2
+        batch_size=128, shuffle=True, num_workers=os.cpu_count() // 2
     )
 
     '''
@@ -132,8 +132,8 @@ def main():
         # f"~/workspace/mie-pathology/_data/survival_cls.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv1.csv"
-        f"~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
     ).expanduser())
 
     model_path = Path(
@@ -149,9 +149,10 @@ def main():
         # """cls2, max.f1, BETTER"""
         # "~/data/_out/mie-pathology/20211021_w1024s512cv0/model00003.pth"  # cls2
         # "~/data/_out/mie-pathology/20211025_w1024s512cv1/model00003.pth"  # cls2
-        "~/data/_out/mie-pathology/20211026_w1024s512cv2/model00008.pth"  # cls2
+        # "~/data/_out/mie-pathology/20211026_w1024s512cv2/model00008.pth"  # cls2
         # "~/data/_out/mie-pathology/20211028_w1024s512cv3/model00189.pth"  # cls2
-
+        # """cls2, EfficientNet-b0"""
+        "~/data/_out/mie-pathology/20211203_w1024s512cv3/model00091.pth"
     ).expanduser()
 
     # model_path /= "20210813_224753/model00005.pth"

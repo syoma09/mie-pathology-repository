@@ -93,10 +93,10 @@ def main():
         # f"~/workspace/mie-pathology/_data/survival_cls2.csv"
         # f"~/workspace/mie-pathology/_data/survival_2dfs.csv"
         # f"~/workspace/mie-pathology/_data/survival_3os.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv1.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
-        f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
@@ -114,22 +114,22 @@ def main():
     annotation = load_annotation(annotation_path)
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=64, shuffle=True,
+        PatchDataset(dataset_root, annotation['train']), batch_size=16, shuffle=True,
         num_workers=os.cpu_count() // 2
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid']), batch_size=128,
+        PatchDataset(dataset_root, annotation['valid']),
+        batch_size=train_loader.batch_size*2,
         num_workers=os.cpu_count() // 2
     )
-    
 
     '''
-    モデルの構築
+    Build model
     '''
     model = create_model().to(device)
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()              # Need Sigmoid
@@ -159,7 +159,7 @@ def main():
         for batch, (x, y_true) in enumerate(train_loader):
             x, y_true = x.to(device), y_true.to(device)
             y_pred = model(x)   # Forward
-            y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
+            # y_pred = y_pred.logits  # To convert InceptionOutputs -> Tensor
 
             loss = criterion(y_pred, y_true)  # Calculate training loss
             optimizer.zero_grad()
