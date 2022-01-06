@@ -14,7 +14,7 @@ def get_tb_value(log: Path, tag: str) -> [float]:
         for e in tf.compat.v1.train.summary_iterator(str(log))
         for v in e.summary.value
         if v.tag == tag
-    ]
+    ]   # [:100]
     # return [
     #     v.simple_value
     #     for e in tf.data.TFRecordDataset(log)
@@ -78,22 +78,7 @@ def main():
     # # Find latest logging directory
     # tf_log = sorted(tf_log.iterdir())[-1]
     # Or manually select
-    """Exp @2021/08"""
-    # tf_log /= "20210806_135428"
-    # tf_log /= "20210808_234140"
-    # tf_log /= "20210811_104309"
-    # tf_log /= "20210813_224753"
-    """Exp @2021/11"""
-    # tf_log /= "20211021_w1024s512cv0"
-    # tf_log /= "20211025_w1024s512cv1"
-    # tf_log /= "20211026_w1024s512cv2"
-    # tf_log /= "20211028_w1024s512cv3"
-    # tf_log /= "20211029_230414"
-    # tf_log /= "20211030_194555"
-    """Exp @2021/12"""
-    tf_log /= "20211203_w1024s512cv3"
-
-    # tf_log = Path("~/workspace/mie-pathology/survival/logs/").expanduser()
+    tf_log /= "20211228_w2014s512cv3_adam"
 
     print("Process log in", tf_log)
 

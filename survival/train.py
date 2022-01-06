@@ -93,9 +93,9 @@ def main():
         # f"~/workspace/mie-pathology/_data/survival_cls2.csv"
         # f"~/workspace/mie-pathology/_data/survival_2dfs.csv"
         # f"~/workspace/mie-pathology/_data/survival_3os.csv"
-        f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls2/cv1.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
+        # "~/workspace/mie-pathology/_data/survival_cls2/cv1.csv"
+        "~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
     ).expanduser()
 
@@ -128,8 +128,8 @@ def main():
     '''
     model = create_model().to(device)
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()              # Need Sigmoid
