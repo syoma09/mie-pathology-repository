@@ -95,8 +95,12 @@ def main():
         # f"~/workspace/mie-pathology/_data/survival_3os.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
         # "~/workspace/mie-pathology/_data/survival_cls2/cv1.csv"
-        "~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
+        # "~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
+        "~/workspace/mie-pathology/_data/pick_up/cv0.csv"
+        # "~/workspace/mie-pathology/_data/pick_up/cv1.csv"
+        # "~/workspace/mie-pathology/_data/pick_up/cv2.csv"
+        # "~/workspace/mie-pathology/_data/pick_up/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
