@@ -78,7 +78,8 @@ def main():
     # # Find latest logging directory
     # tf_log = sorted(tf_log.iterdir())[-1]
     # Or manually select
-    tf_log /= "20211228_w2014s512cv3_adam"
+    # tf_log /= "20211228_w2014s512cv3_adam"
+    tf_log /= "20220222_160214"
 
     print("Process log in", tf_log)
 
