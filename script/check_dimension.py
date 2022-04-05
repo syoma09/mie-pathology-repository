@@ -3,10 +3,8 @@
 
 from pathlib import Path
 
-import pandas as pd
-import os,sys
-sys.path.append(os.path.join('..'))
-print(sys.path)
+import pandas as pd=
+
 from data.svs import SVS
 
 

@@ -14,7 +14,7 @@ def get_tb_value(log: Path, tag: str) -> [float]:
         for e in tf.compat.v1.train.summary_iterator(str(log))
         for v in e.summary.value
         if v.tag == tag
-    ]
+    ]   # [:100]
     # return [
     #     v.simple_value
     #     for e in tf.data.TFRecordDataset(log)
@@ -78,21 +78,17 @@ def main():
     # # Find latest logging directory
     # tf_log = sorted(tf_log.iterdir())[-1]
     # Or manually select
-    # tf_log /= "20210806_135428"
-    # tf_log /= "20210808_234140"
-    # tf_log /= "20210811_104309"
-    tf_log /= "20210813_224753"
-
-    # tf_log = Path("~/workspace/mie-pathology/survival/logs/").expanduser()
+    # tf_log /= "20211228_w2014s512cv3_adam"
+    tf_log /= "20220222_160214"
 
     print("Process log in", tf_log)
 
     if tf_log.is_dir():
         tf_log = list(tf_log.glob("events.out.tfevents.*"))[0]
 
-    data = get_tb_value(tf_log, f"valid_f1")
-    print(data)
-    exit(0)
+    # data = get_tb_value(tf_log, f"valid_f1")
+    # print(data)
+    # exit(0)
 
     for dataset in ['train', 'valid']:
         plot_loss(tf_log, dataset=dataset)
