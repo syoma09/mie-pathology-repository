@@ -68,7 +68,8 @@ def split_cv(counts, cv=4):
 def main():
     # Source annotation file
     src = Path(
-        "~/workspace/mie-pathology/_data/survival_cls2.csv"
+        # "~/workspace/mie-pathology/_data/survival_cls2.csv"
+        "~/workspace/mie-pathology/_data/pick_up.csv"
     ).expanduser()
     # Destination root
     dst = src.parent / src.stem

@@ -27,7 +27,7 @@ def evaluate(dataset_root, subjects, model_path):
     data_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, subjects),
         # PatchDataset(dataset_root, annotation['test']),
-        batch_size=512, shuffle=True, num_workers=os.cpu_count() // 2
+        batch_size=128, shuffle=True, num_workers=os.cpu_count() // 2
     )
 
     '''
@@ -128,23 +128,22 @@ def main():
     patch_size = 1024, 1024
     stride = 512, 512
 
+    cv = 3
+    optim = 'adam'
+    date, epoch = 20211228, 302
+
+    # Load annotation
     annotation = load_annotation(Path(
-        # f"~/workspace/mie-pathology/_data/survival_cls.csv"
-        f"~/workspace/mie-pathology/_data/survival_cls/cv0.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls/cv1.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls/cv2.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls/cv3.csv"
+        f"~/workspace/mie-pathology/_data/survival_cls2/cv{cv}.csv"
     ).expanduser())
 
     model_path = Path(
-        "~/data/_out/mie-pathology/20210806_135428/model00073.pth"  # cls-cv0
-        # "~/data/_out/mie-pathology/20210808_234140/model00006.pth"  # cls-cv1
-        # "~/data/_out/mie-pathology/20210811_104309/model00057.pth"  # cls-cv2
-        # "~/data/_out/mie-pathology/20210813_224753/model00005.pth"  # cls-cv3
+        f"~/data/_out/mie-pathology/{date}_w{patch_size[0]}s{stride[0]}cv{cv}_{optim}/model{epoch:05}.pth"
     ).expanduser()
 
-    # model_path /= "20210813_224753/model00005.pth"
-
+    """
+    Subject-wise experiment
+    """
     annotation_patient = {
         dataset: sorted(set([
             (name.split('-')[0], cls)
@@ -160,10 +159,10 @@ def main():
         # print(annotation[dataset])
 
         temp = {}
-        for name, cls in annotation[dataset]:
-            subjects = [(name, cls)]
-        # for name, cls in annotation_patient[dataset]:
-        #     subjects = filter_images(name, annotation[dataset])
+        # for name, cls in annotation[dataset]:
+        #     subjects = [(name, cls)]
+        for name, cls in annotation_patient[dataset]:
+            subjects = filter_images(name, annotation[dataset])
             print(subjects)
 
             cmat = evaluate(
