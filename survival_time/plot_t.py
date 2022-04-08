@@ -64,12 +64,14 @@ class PatchDataset(torch.utils.data.Dataset):
         # Normalize
         #label /= 90.
         # Classsification
-        if(label < 13):
+        if(label < 12):
             label_class = 0
-        elif(label < 34):
+        elif(label < 24):
             label_class = 1
-        elif(label < 67):
+        elif(label < 36):
             label_class = 2
+        elif(label < 48):
+            label_class = 3
         # Tensor
         label = torch.tensor(label, dtype=torch.float)
 
@@ -89,17 +91,30 @@ def create_model():
 
 # model = torchvision.models.resnet152(pretrained=False)
     # model = torchvision.models.resnet152(pretrained=True)
-    net = torchvision.models.resnet50(pretrained=True)
-    # print(model)
-
-    # Replace FC layer
-    num_features = net.fc.in_features
+    net = AutoEncoder.create_model()
+    
+    net.load_state_dict(torch.load(
+        dataset_root / '20220222_032128model00257.pth', map_location=device)
+    )
+    #num_features = net.fc.in_features
     # print(num_features)  # 512
-    net.fc = nn.Sequential(
-        nn.Linear(num_features, 1, bias=True),
-        # nn.Softmax(dim=1)
+    #net.dec = nn.ReLU()
+    net.dec = nn.Sequential(
+        #nn.Linear(512, 512, bias=True),
+        #nn.Linear(512, 512, bias=True),
+        nn.Linear(512, 4, bias=True),
+        nn.Softmax(dim=1)
         # nn.Sigmoid()
     )
+    '''for param in net.parameters():
+        param.requires_grad = False
+    last_layer = list(net.children())[-1]
+    print(f'except last layer: {last_layer}')
+    for param in last_layer.parameters():
+        param.requires_grad = True'''
+    net.load_state_dict(torch.load(
+        dataset_root / '20220317_114715model04000.pth', map_location=device)
+        )
     net = net.to(device)
     # net = torch.nn.DataParallel(net).to(device)
 
@@ -142,16 +157,32 @@ def main():
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, yml['train']), batch_size=batch_size, shuffle                                                                                                                                    =True,
-        num_workers=num_workers
+        PatchDataset(dataset_root, yml['train']), batch_size=batch_size, shuffle=True,num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
      PatchDataset(dataset_root, yml['valid']), batch_size=batch_size,
         num_workers=num_workers
     )
     net = AutoEncoder.create_model().to(device)
+    #num_features = net.fc.in_features
+    # print(num_features)  # 512
+    #net.dec = nn.ReLU()
+    net.dec = nn.Sequential(
+        #nn.Linear(512, 512, bias=True),
+        #nn.Linear(512, 512, bias=True),
+        nn.Linear(512, 4, bias=True),
+        nn.Softmax(dim=1)
+        # nn.Sigmoid()
+     )
+    '''for param in net.parameters():
+        param.requires_grad = False
+    last_layer = list(net.children())[-1]
+    print(f'except last layer: {last_layer}')
+    for param in last_layer.parameters():
+    param.requires_grad = True'''
     net.load_state_dict(torch.load(
-    dataset_root / '20220107_011102model00574.pth', map_location=device))
+    dataset_root / '20220317_114715model04000.pth', map_location=device))
+    net = net.to(device)
     fig ,ax = plt.subplots()
     d_today = datetime.date.today()
     with torch.no_grad():
@@ -160,14 +191,15 @@ def main():
         #y_true_plot = []
         #y_pred_plot = []
         j = 0
-        for batch,(x, y_true) in enumerate(valid_loader):
+        for batch,(x, y_true, y_class) in enumerate(valid_loader):
             j += 1
             print(j)
-            x,y_true = x.to(device), y_true.to(device)
+            x,y_true,y_class = x.to(device), y_true.to(device), y_class.to(device)
             y_pred = net(x)   # Forward
-            output_and_label.append((y_pred, y_true))
-            #y_true_plot.append(y_true.cpu().numpy().tolist())
-            #y_pred_plot.append(y_pred.cpu().numpy().flatten().tolist())
+            valid_loss_tensor = train_time.valid_loss(y_pred,y_class)
+            output_and_label.append((valid_loss_tensor, y_true))
+            y_true_plot.append(y_true.cpu().numpy().tolist())
+            valid_loss_tensor_plot.append(valid_loss_tensor.cpu().numpy().flatten().tolist())
         i = 1
         for i in range(len(output_and_label)):
             print(i)
