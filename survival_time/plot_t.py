@@ -14,6 +14,7 @@ import numpy
 import matplotlib.pyplot as plt
 import AutoEncoder
 import train_time
+import random
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
@@ -39,7 +40,19 @@ class PatchDataset(torch.utils.data.Dataset):
         self.paths = []
         for subject in subjects:
             self.paths += list((root / subject).iterdir())
-
+            '''print(subject)
+            path = []
+            path += list((root / subject).iterdir())
+            if(subject == "57-10" or subject == "57-11"):
+                self.paths += random.sample(path,4000)
+            elif(subject == "38-4" or subject == "38-5"):
+                self.paths += random.sample(path,len(path))
+            elif(len(path) < 2000):
+                self.paths += random.sample(path,len(path))
+            else:
+                self.paths+= random.sample(path,2000)'''
+        #print(self.paths[0])
+        print(len(self.paths))
         # print(self.paths[0])
         # print(len(self.paths))
 
@@ -181,30 +194,45 @@ def main():
     for param in last_layer.parameters():
     param.requires_grad = True'''
     net.load_state_dict(torch.load(
-    dataset_root / '20220317_114715model04000.pth', map_location=device))
+    dataset_root / '20220317_114715model03888.pth', map_location=device))
     net = net.to(device)
     fig ,ax = plt.subplots()
     d_today = datetime.date.today()
     with torch.no_grad():
         net.eval()
         output_and_label = []
-        #y_true_plot = []
-        #y_pred_plot = []
+        y_true_plot = []
+        valid_loss_tensor_plot = []
         j = 0
         for batch,(x, y_true, y_class) in enumerate(valid_loader):
             j += 1
             print(j)
             x,y_true,y_class = x.to(device), y_true.to(device), y_class.to(device)
             y_pred = net(x)   # Forward
-            valid_loss_tensor = train_time.valid_loss(y_pred,y_class)
-            output_and_label.append((valid_loss_tensor, y_true))
-            y_true_plot.append(y_true.cpu().numpy().tolist())
-            valid_loss_tensor_plot.append(valid_loss_tensor.cpu().numpy().flatten().tolist())
-        i = 1
-        for i in range(len(output_and_label)):
-            print(i)
-            ax.plot(output_and_label[i],'.')
+            valid_loss_tensor = train_time.valid_loss(y_pred,y_true)
+            #print(f'valid_loss_tensor : {valid_loss_tensor}')
+            #output_and_label.append((valid_loss_tensor, y_true))
+            for k  in range(len(y_pred)):
+                y_true_plot.append(y_true[k].cpu().numpy().tolist())
+                #print(y_true[k])
+                #print('\n')
+                valid_loss_tensor_plot.append(valid_loss_tensor[k].cpu().numpy().tolist())
+            #print(f'valid_loss_tensor_plot : {valid_loss_tensor_plot}')
+            #for k range(len(y_true):
+            #print(f'y_true_plot : {y_true_plot}')
+            #print(f'output_and_label : {output_and_label[0]}')
+        output_and_label.append((valid_loss_tensor_plot, y_true_plot))
+        #print(f'y_true_plot : {len(y_true_plot)}')
+        #print(f'valid_loss_tensor_plot : {valid_loss_tensor_plot}')
+        #print(f'output_and_label : {len(output_and_label)}')
+        for i in range(len(valid_loss_tensor_plot)):
+            print(f'i : {i}')
+            #ax.plot(output_and_label[0],output_and_label[1],'.')
+            ax.plot(valid_loss_tensor_plot[i],y_true_plot[i],'.')
             fig.savefig(f'valid{d_today}00000.png')
+        ax.set_xlabel("Pred")
+        ax.set_ylabel("True")
+        plt.show()
         print(f'valid00000.png')
 
 if __name__ == '__main__':
