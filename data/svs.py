@@ -10,7 +10,7 @@ from openslide import OpenSlide
 
 
 class SVS(object):
-    zoom = 1.0
+    # zoom = 1.0
 
     def __init__(self, path: Path, annotation=None):
         if not path.suffix == ".svs":
@@ -25,39 +25,65 @@ class SVS(object):
         print("SVS() load annotation from:", annotation)
         self.annotation = SVSAnnotation(annotation)
 
-        self.mask = self.__create_mask(
-            self.image.slide.dimensions,
-            [(x, y) for x, y in self.annotation.Vertices]
-        )
+        # self.mask = self.__create_mask(
+        #     self.image.slide.dimensions,
+        #     [(x, y) for x, y in self.annotation.Vertices]
+        # )
 
-    @staticmethod
-    def __create_mask(shape, polygon):
-        """
-        Mask iamge requires about 20GiB RAM.
+    # @staticmethod
+    # def __create_mask(shape, polygon):
+    #     """
+    #     Mask iamge requires about 20GiB RAM.
+    #
+    #     :param shape:
+    #     :param polygon:
+    #     :return:
+    #     """
+    #     mask = Image.new("1", shape, 0)
+    #     draw = ImageDraw.Draw(mask)
+    #     draw.polygon(polygon, fill=1)
+    #
+    #     # WARNING: This conversion requires 8 times larger RAM
+    #     # mask = np.array(mask, dtype=bool)
+    #
+    #     return mask
 
-        :param shape:
-        :param polygon:
-        :return:
-        """
-        mask = Image.new("1", shape, 0)
-        draw = ImageDraw.Draw(mask)
-        draw.polygon(polygon, fill=1)
-
-        # WARNING: This conversion requires 8 times larger RAM
-        # mask = np.array(mask, dtype=bool)
-
-        return mask
-
-    def get_thumbnail(self, shape):
+    def thumbnail(
+            self,
+            shape           # Max-shape of target image
+    ) -> (Image, float):    # Thumbnail image, and zoom ratio
         dims = self.image.slide.dimensions
         zoom = min(shape[0] / dims[0], shape[1] / dims[1])
 
         # Convert PIL image to Numpy array, swap X and Y axes
         image = self.image.slide.get_thumbnail(shape)
-        # Multiply image zoom ratio to fit the annotation vertices to resized image
-        annot = (self.annotation.Vertices * zoom).astype(np.int)
 
-        return image, annot
+        return image, zoom
+
+    def mask(self, vertices: list, zoom: float = 1.0) -> Image:
+        """
+        Mask image requires about 20GiB RAM.
+
+        :param vertices:    Result of SVSAnnotation.vertices()
+        :param zoom:        Zoom ratio of vertices
+        :return:
+        """
+
+        # Init
+        mask = Image.new("1", self.image.slide.dimensions, 0)
+        draw = ImageDraw.Draw(mask)
+
+        for _, annot in vertices:
+            for _, region in annot:
+                draw.polygon(
+                    [(x * zoom, y * zoom) for x, y in region],
+                    fill=1
+                )
+
+        # WARNING: This conversion requires 8 times larger RAM
+        # mask = np.array(mask, dtype=bool)
+
+        return mask
 
     def patches(self, size=(256, 256), stride=(64, 64)):
         shape = self.image.slide.dimensions
@@ -80,7 +106,7 @@ class SVS(object):
         :param size:        (width, height)
         :return:            Mask image of given location + size
         """
-        mask = self.mask.crop(box=(
+        mask = self.mask().crop(box=(
             location[0],
             location[1],
             location[0] + size[0],
@@ -108,27 +134,54 @@ class SVSImage(object):
 class SVSAnnotation(object):
     def __init__(self, path):
         et = ET.parse(path)
-        root = et.getroot()
+        self.__root = et.getroot()
 
-        self._microns_per_pixel = root.attrib["MicronsPerPixel"]
-        self._vertices = np.array([
-            [int(v.attrib["X"]), int(v.attrib["Y"])]    #, int(v.attrib["Z"])] # Ignore Z
-            for v in root.find("Annotation").find("Regions").find("Region").find("Vertices").findall("Vertex")
-        ])
+        self._microns_per_pixel = self.__root.attrib["MicronsPerPixel"]
+        # self._vertices = np.array([
+        #     [int(v.attrib["X"]), int(v.attrib["Y"])]    #, int(v.attrib["Z"])] # Ignore Z
+        #     for v in root.find("Annotation").find("Regions").find("Region").find("Vertices").findall("Vertex")
+        # ])
 
     @property
     def MicronsPerPixel(self):
         return self._microns_per_pixel
 
-    @property
-    def Vertices(self):
+    # @property
+    # def Vertices(self):
+    #     return self.vertices(1, 1)
+
+    def vertices(self, index: int = None, region: int = None, zoom: float = 1.0) -> list:
         """
         :return:    vertices in pixel
         """
-        return self._vertices
+
+        index = '' if index is None else f'[@Id="{index}"]'
+        region = '' if region is None else f'[@Id="{region}"]'
+
+        return [
+            (
+                annot.get('Id'),
+                [
+                    (
+                        region.get('Id'),
+                        np.array([
+                            [int(v.attrib["X"]), int(v.attrib["Y"])]
+                            for v in region.findall('Vertices/Vertex')
+                        ])
+                    )
+                    for region in annot.findall(f'Regions/Region{region}')
+                ]
+            )
+            for annot in self.__root.findall(f'Annotation{index}')
+        ]
 
 
-def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None):
+def save_patches(
+        path_svs: Path, path_xml: Path,
+        base: Path,
+        size: (int, int), stride: (int, int), resize: (int, int) = None,
+        index: int = None, region: int = None
+):
     """
 
     :param path_svs:    Path to image svs
@@ -137,6 +190,8 @@ def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None
     :param size:        Patch size
     :param stride:      Patch stride
     :param resize:      Resize extracted patch
+    :param index:       Numerical index of annotation
+    :param region:      Numerical index of region in the annotation
     :return:        None
     """
 
@@ -144,15 +199,23 @@ def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None
         path_svs,
         annotation=path_xml
     )
+    mask = svs.mask(
+        vertices=svs.annotation.vertices(index, region, zoom=1.0),
+        zoom=1.0
+    )
 
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
         patch_path = str(base) + f"{i:08}img.png"
         if Path(patch_path).exists():
             continue
 
-        mask = svs.crop_mask(p0, size)
-        if np.sum(mask) < size[0] * size[1] * 255:
-            # Ignore if the mask full-cover the patch region
+        # mask = svs.crop_mask(p0, size)
+        cropped_mask = mask.crop(box=(
+            p0[0], p0[1],
+            p0[0] + size[0], p0[1] + size[1]
+        ))
+        if np.sum(np.array(cropped_mask)) < size[0] * size[1]:
+            # Ignore if the mask does not full-cover the patch region
             continue
 
         img = svs.crop_img(p0, size)
@@ -162,4 +225,4 @@ def save_patches(path_svs: Path, path_xml: Path, base, size, stride, resize=None
         print(patch_path)
         img.save(patch_path)
 
-    del svs
+    del svs, mask
