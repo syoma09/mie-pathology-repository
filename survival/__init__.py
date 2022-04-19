@@ -178,6 +178,7 @@ def load_annotation(path: Path):
         annotation[
             # Switch train/valid by tvt-column value (0: train, 1: valid)
             ['train', 'valid', 'test', 'IGNORE'][int(row['tvt'])]
-        ].append((row['number'], row['label']))     # Append annotation tuple
+        ].append((row['number'], row['OS']))     # Append annotation tuple
+        # ].append((row['number'], row['label']))     # Append annotation tuple
 
     return annotation
