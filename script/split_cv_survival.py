@@ -70,7 +70,8 @@ def main():
     src = Path(
         # "~/workspace/mie-pathology/_data/survival_cls2.csv"
         # "~/workspace/mie-pathology/_data/pick_up.csv"
-        "../_data/20220413.csv"
+        # "../_data/20220413.csv"
+        "../_data/20220413s.csv"
     ).expanduser().absolute()
     # Destination root
     dst = src.parent / src.stem
