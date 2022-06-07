@@ -104,7 +104,7 @@ def main():
         df['tvt'] = 0
         for subject, _ in valid_neg + valid_pos:
             df.loc[
-                df['number'].str.startswith(subject), 'tvt'
+                df['number'].str.startswith(f"{subject}-"), 'tvt'
             ] = 1
 
         print("##################################################")
