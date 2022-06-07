@@ -14,7 +14,7 @@ def get_tb_value(log: Path, tag: str) -> [float]:
         for e in tf.compat.v1.train.summary_iterator(str(log))
         for v in e.summary.value
         if v.tag == tag
-    ]   # [:100]
+    ][:300]
     # return [
     #     v.simple_value
     #     for e in tf.data.TFRecordDataset(log)
@@ -78,8 +78,10 @@ def main():
     # # Find latest logging directory
     # tf_log = sorted(tf_log.iterdir())[-1]
     # Or manually select
-    # tf_log /= "20211228_w2014s512cv3_adam"
-    tf_log /= "20220222_160214"
+    # tf_log /= "20220430_115010"
+    # tf_log /= "20220430_115235"
+    tf_log /= "20220506_120337"
+    # tf_log /= "20220506_101659"
 
     print("Process log in", tf_log)
 
