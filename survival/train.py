@@ -107,10 +107,14 @@ def main():
         # "~/workspace/mie-pathology/_data/pick_up/cv2.csv"
         # "~/workspace/mie-pathology/_data/pick_up/cv3.csv"
         # "../_data/20220413s.csv"
-        "../_data/20220413s/cv0.csv"
+        # "../_data/20220413s/cv0.csv"
         # "../_data/20220413s/cv1.csv"
         # "../_data/20220413s/cv2.csv"
         # "../_data/20220413s/cv3.csv"
+        "../_data/20220428_3os/cv0.csv"
+        # "../_data/20220428_3os/cv1.csv"
+        # "../_data/20220428_3os/cv2.csv"
+        # "../_data/20220428_3os/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists

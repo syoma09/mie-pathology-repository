@@ -128,17 +128,22 @@ def main():
     patch_size = 1024, 1024
     stride = 512, 512
 
-    cv = 3
-    optim = 'adam'
-    date, epoch = 20211228, 302
+    # optim = 'adam'
+    # cv = 3
+    # cv, date, epoch = 0, "20220430_115010", 6
+    cv, date, epoch = 1, "20220430_115235", 54
+    # cv, date, epoch = 2, "20220506_120337", 263
+    # cv, date, epoch = 3, "20220506_101659", 26
 
     # Load annotation
     annotation = load_annotation(Path(
-        f"~/workspace/mie-pathology/_data/survival_cls2/cv{cv}.csv"
+        # f"~/workspace/mie-pathology/_data/survival_cls2/cv{cv}.csv"
+        f"../_data/20220428_3os/cv{cv}.csv"
     ).expanduser())
 
     model_path = Path(
-        f"~/data/_out/mie-pathology/{date}_w{patch_size[0]}s{stride[0]}cv{cv}_{optim}/model{epoch:05}.pth"
+        # f"~/data/_out/mie-pathology/{date}_w{patch_size[0]}s{stride[0]}cv{cv}_{optim}/model{epoch:05}.pth"
+        f"~/data/_out/mie-pathology/{date}/model{epoch:05}.pth"
     ).expanduser()
 
     """
