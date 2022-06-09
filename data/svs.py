@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from PIL import Image, ImageDraw
 from openslide import OpenSlide
 
@@ -12,7 +13,12 @@ from openslide import OpenSlide
 class SVS(object):
     # zoom = 1.0
 
-    def __init__(self, path: Path, annotation=None):
+    def __init__(
+            self,
+            path: Path,
+            annotation=None,
+            # cache: Path = Path("~/data/_cache/mie-pathology/").expanduser()
+    ):
         if not path.suffix == ".svs":
             raise IOError("*.svs file is required by SVS()")
 
@@ -25,28 +31,65 @@ class SVS(object):
         print("SVS() load annotation from:", annotation)
         self.annotation = SVSAnnotation(annotation)
 
+        # self.mask_path = cache / "mask" / (path.stem + ".npy")
+        # if not self.mask_path.exists():
+        #     # Create directory
+        #     if not self.mask_path.parent.exists():
+        #         self.mask_path.parent.mkdir(parents=True, exist_ok=True)
+        #     # Create mask
+        #     print("Start __init_mask() <<<<<", path)
+        #     self.__init_mask()
+        #     print("     >>>>> Finish __init_mask()")
+
+        # self.mask = np.memmap(
+        #     str(self.mask_path), mode="r",
+        #     shape=self.image.slide.dimensions, dtype=bool
+        # )
+
         # self.mask = self.__create_mask(
         #     self.image.slide.dimensions,
         #     [(x, y) for x, y in self.annotation.Vertices]
         # )
+        self.mask = self.__init_mask(zoom=1.0)
 
-    # @staticmethod
-    # def __create_mask(shape, polygon):
-    #     """
-    #     Mask iamge requires about 20GiB RAM.
-    #
-    #     :param shape:
-    #     :param polygon:
-    #     :return:
-    #     """
-    #     mask = Image.new("1", shape, 0)
-    #     draw = ImageDraw.Draw(mask)
-    #     draw.polygon(polygon, fill=1)
-    #
-    #     # WARNING: This conversion requires 8 times larger RAM
-    #     # mask = np.array(mask, dtype=bool)
-    #
-    #     return mask
+    def __init_mask(self, zoom: float = 1.0) -> Image:
+        """
+        Mask image requires about 20GiB RAM.
+
+        :return:
+        """
+        mask = Image.new("1", self.image.slide.dimensions, 0)
+        draw = ImageDraw.Draw(mask)
+
+        print("-- Pillow")
+        # Use last annotation (Layer2) only
+        _, annot = self.annotation.vertices()[-1]
+        # Draw region polygons
+        for _, region in annot:
+            draw.polygon(
+                [(x * zoom, y * zoom) for x, y in region],
+                fill=1
+            )
+
+        return mask
+
+        # print("-- Allocating memmap")
+        # # WARNING: This conversion requires 8 times larger RAM
+        # # mask = np.array(mask, dtype=bool)
+        # mmap = np.memmap(
+        #     str(self.mask_path), mode='w+',
+        #     shape=(mask.width, mask.height), dtype=bool
+        # )
+        #
+        # print("-- Copy pixels")
+        # # TODO: Bad impl
+        # for j in range(mask.height):
+        #     for i in range(mask.width):
+        #         mmap[i, j] = mask.getpixel((i, j)) > 0
+        #
+        # print("-- Writing")
+        # mmap.flush()
+        # print("-- Finish")
 
     def thumbnail(
             self,
@@ -60,30 +103,30 @@ class SVS(object):
 
         return image, zoom
 
-    def mask(self, vertices: list, zoom: float = 1.0) -> Image:
-        """
-        Mask image requires about 20GiB RAM.
-
-        :param vertices:    Result of SVSAnnotation.vertices()
-        :param zoom:        Zoom ratio of vertices
-        :return:
-        """
-
-        # Init
-        mask = Image.new("1", self.image.slide.dimensions, 0)
-        draw = ImageDraw.Draw(mask)
-
-        for _, annot in vertices:
-            for _, region in annot:
-                draw.polygon(
-                    [(x * zoom, y * zoom) for x, y in region],
-                    fill=1
-                )
-
-        # WARNING: This conversion requires 8 times larger RAM
-        # mask = np.array(mask, dtype=bool)
-
-        return mask
+    # def mask(self, vertices: list, zoom: float = 1.0) -> Image:
+    #     """
+    #     Mask image requires about 20GiB RAM.
+    #
+    #     :param vertices:    Result of SVSAnnotation.vertices()
+    #     :param zoom:        Zoom ratio of vertices
+    #     :return:
+    #     """
+    #
+    #     # Init
+    #     mask = Image.new("1", self.image.slide.dimensions, 0)
+    #     draw = ImageDraw.Draw(mask)
+    #
+    #     for _, annot in vertices:
+    #         for _, region in annot:
+    #             draw.polygon(
+    #                 [(x * zoom, y * zoom) for x, y in region],
+    #                 fill=1
+    #             )
+    #
+    #     # WARNING: This conversion requires 8 times larger RAM
+    #     # mask = np.array(mask, dtype=bool)
+    #
+    #     return mask
 
     def patches(self, size=(256, 256), stride=(64, 64)):
         shape = self.image.slide.dimensions
@@ -106,7 +149,19 @@ class SVS(object):
         :param size:        (width, height)
         :return:            Mask image of given location + size
         """
-        mask = self.mask().crop(box=(
+        # mask = self.mask(
+        #     self.annotation.vertices()[-1:]  # TODO: Layer2 only
+        # ).crop(box=(
+        #     location[0],
+        #     location[1],
+        #     location[0] + size[0],
+        #     location[1] + size[1]
+        # ))
+        # mask = self.mask[
+        #     location[0]:location[0] + size[0],
+        #     location[1]:location[1] + size[1],
+        # ]
+        mask = self.mask.crop(box=(
             location[0],
             location[1],
             location[0] + size[0],
@@ -199,22 +254,18 @@ def save_patches(
         path_svs,
         annotation=path_xml
     )
-    mask = svs.mask(
-        vertices=svs.annotation.vertices(index, region, zoom=1.0),
-        zoom=1.0
+    patch_list = pd.DataFrame(
+        columns=("x", "y", "width", "height", "path")
     )
 
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
         patch_path = str(base) + f"{i:08}img.png"
-        if Path(patch_path).exists():
-            continue
+        print(patch_path)
+        # if Path(patch_path).exists():
+        #     continue
 
-        # mask = svs.crop_mask(p0, size)
-        cropped_mask = mask.crop(box=(
-            p0[0], p0[1],
-            p0[0] + size[0], p0[1] + size[1]
-        ))
-        if np.sum(np.array(cropped_mask)) < size[0] * size[1]:
+        mask = svs.crop_mask(p0, size)
+        if np.sum(np.array(mask)) < size[0] * size[1]:
             # Ignore if the mask does not full-cover the patch region
             continue
 
@@ -222,7 +273,13 @@ def save_patches(
         if resize is not None:
             img = img.resize(resize)
 
-        print(patch_path)
         img.save(patch_path)
+        patch_list = pd.concat([
+            patch_list,
+            pd.DataFrame({"x": [p0[0]], "y": [p0[1]], "width": [size[0]], "height": [size[1]], "path": [patch_path]})
+        ], ignore_index=True)
 
-    del svs, mask
+    del svs
+
+    # Save patch list
+    patch_list.to_csv(str(base) + "list.csv", index=False)
