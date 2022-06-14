@@ -11,8 +11,6 @@ from openslide import OpenSlide
 
 
 class SVS(object):
-    # zoom = 1.0
-
     def __init__(
             self,
             path: Path,
@@ -61,7 +59,7 @@ class SVS(object):
         mask = Image.new("1", self.image.slide.dimensions, 0)
         draw = ImageDraw.Draw(mask)
 
-        print("-- Pillow")
+        # print("-- Pillow")
         # Use last annotation (Layer2) only
         _, annot = self.annotation.vertices()[-1]
         # Draw region polygons
@@ -220,7 +218,7 @@ class SVSAnnotation(object):
                     (
                         region.get('Id'),
                         np.array([
-                            [int(v.attrib["X"]), int(v.attrib["Y"])]
+                            [int(float(v.attrib["X"]) * zoom), int(float(v.attrib["Y"]) * zoom)]
                             for v in region.findall('Vertices/Vertex')
                         ])
                     )

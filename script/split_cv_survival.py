@@ -68,11 +68,7 @@ def split_cv(counts, cv=4):
 def main():
     # Source annotation file
     src = Path(
-        # "~/workspace/mie-pathology/_data/survival_cls2.csv"
-        # "~/workspace/mie-pathology/_data/pick_up.csv"
-        # "../_data/20220413.csv"
-        # "../_data/20220413s.csv"
-        "../_data/20220428_3os.csv"
+        "../_data/20220610_3os.csv"
     ).expanduser().absolute()
     # Destination root
     dst = src.parent / src.stem
@@ -82,13 +78,11 @@ def main():
     df = pd.read_csv(src)
 
     # Retrieve non-survivers
-    # df_neg = df[df.label == 0]
-    df_neg = df[df.OS == 0]
+    df_neg = df[df.label == 0]
     cv_neg = split_cv(count_subject_image(df_neg))
 
     # Retrieve survivers
-    # df_pos = df[df.label == 1]
-    df_pos = df[df.OS == 1]
+    df_pos = df[df.label == 1]
     cv_pos = split_cv(count_subject_image(df_pos))
 
     # Sort

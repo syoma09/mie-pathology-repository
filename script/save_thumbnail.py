@@ -19,9 +19,11 @@ def save_thumbnail(svs: SVS, path, index: int = None, region: int = None):
     # draw.polygon(vtx, outline=(0, 255, 0))
 
     # TODO: Extracting 2nd+ annotation only
+    # for _, annot in annots[-1:]:
     for _, annot in annots:
         for _, region in annot:
             vtx = [(x, y) for [x, y] in region]
+            # print(vtx)
 
             x0, y0 = vtx[0]
             for x, y in vtx:
@@ -46,7 +48,7 @@ def main():
     dst = Path("~/data/_out/").expanduser()
 
     df = pd.read_csv(Path(
-        "../_data/20220413.csv"
+        "../_data/20220610_3os.csv"
     ).expanduser())
     print(df)
 
@@ -61,7 +63,7 @@ def main():
             dataset / f"{subject}.xml"
         )
 
-        save_thumbnail(svs, str(dst / f"test-{subject}.jpg"))
+        save_thumbnail(svs, str(dst / f"{subject}.jpg"))
         print(svs.image.slide.dimensions)
 
 

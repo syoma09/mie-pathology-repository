@@ -19,29 +19,20 @@ def get_dataset_root_path(patch_size, stride):
     :return:    Dataset root Path() object
     """
 
-    # # Home directory
-    # return Path("~/data/_out/mie-pathology/").expanduser()
+    # Home directory
+    pwd = Path("~/cache/mie-pathology/").expanduser()
+    # # Local SSD Cache
+    # pwd = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
 
-    # Local SSD Cache
-    path = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
-    path /= "survival_p{}_s{}".format(
+    path = pwd / "survival_p{}_s{}".format(
         f"{patch_size[0]}x{patch_size[1]}",
         f"{stride[0]}x{stride[1]}"
     )
-
     return path
 
 
-class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root: Path, annotations: list):
-        """
-
-        :param root:            Path to dataset root directory
-        :param annotations:     List of (subject, label).
-        """
-        super(PatchDataset, self).__init__()
-
-        self.transform = torchvision.transforms.Compose([
+def get_transform():
+    return torchvision.transforms.Compose([
             # torchvision.transforms.Resize(299),
             torchvision.transforms.Resize(380),
             torchvision.transforms.CenterCrop(299),
@@ -53,8 +44,19 @@ class PatchDataset(torch.utils.data.Dataset):
             # torchvision.transforms.Normalize(0.5, 0.5)
         ])
 
-        self.__dataset = []
 
+class PatchDataset(torch.utils.data.Dataset):
+    def __init__(self, root: Path, annotations: list):
+        """
+
+        :param root:            Path to dataset root directory
+        :param annotations:     List of (subject, label).
+        """
+        super(PatchDataset, self).__init__()
+
+        self.transform = get_transform()
+
+        self.__dataset = []
         for subject, label in annotations:
             self.__dataset += [
                 (path, label)   # Same label for one subject
