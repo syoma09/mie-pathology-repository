@@ -258,9 +258,11 @@ def save_patches(
 
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
         patch_path = str(base) + f"{i:08}img.png"
-        print(patch_path)
         # if Path(patch_path).exists():
         #     continue
+
+        if i % 100 == 0:
+            print(patch_path)
 
         mask = svs.crop_mask(p0, size)
         if np.sum(np.array(mask)) < size[0] * size[1]:

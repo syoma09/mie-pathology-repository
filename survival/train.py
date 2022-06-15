@@ -53,9 +53,9 @@ def create_dataset(
         subject_dir = dst / str(number)
         if not subject_dir.exists():
             subject_dir.mkdir(parents=True, exist_ok=True)
-        # else:
-        #     print(f"Subject #{number} already exists. Skip.")
-        #     continue
+        else:
+            print(f"Subject #{number} already exists. Skip.")
+            continue
 
         path_svs = src / f"{number}.svs"
         path_xml = src / f"{number}.xml"
@@ -85,25 +85,27 @@ def main():
     patch_size = 1024, 1024
     stride = 512, 512
     # patch_size = 256, 256
-    dataset_root = get_dataset_root_path(
-        patch_size=patch_size,
-        stride=stride
-    )
 
     # Log, epoch-model output directory
     log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
-        "../_data/20220610_3os/cv0.csv"
+        "../_data/20220610_3os.csv"
+        # "../_data/20220610_3os/cv0.csv"
         # "../_data/20220610_3os/cv1.csv"
         # "../_data/20220610_3os/cv2.csv"
         # "../_data/20220610_3os/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
+    dataset_root = get_dataset_root_path(
+        patch_size=patch_size,
+        stride=stride
+    )
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
+
     # Existing subjects are ignored in the function
     create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
@@ -113,6 +115,7 @@ def main():
         index=1, region=None
     )
 
+    exit(0)
 
     # Load annotations
     annotation = load_annotation(annotation_path)
