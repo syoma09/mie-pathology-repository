@@ -91,8 +91,8 @@ def main():
     log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
-        "../_data/20220610_3os.csv"
-        # "../_data/20220610_3os/cv0.csv"
+        # "../_data/20220610_3os.csv"
+        "../_data/20220610_3os/cv0.csv"
         # "../_data/20220610_3os/cv1.csv"
         # "../_data/20220610_3os/cv2.csv"
         # "../_data/20220610_3os/cv3.csv"
@@ -114,8 +114,6 @@ def main():
         size=patch_size, stride=stride,
         index=1, region=None
     )
-
-    exit(0)
 
     # Load annotations
     annotation = load_annotation(annotation_path)
