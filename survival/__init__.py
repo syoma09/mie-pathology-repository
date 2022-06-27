@@ -61,6 +61,7 @@ class PatchDataset(torch.utils.data.Dataset):
             self.__dataset += [
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
+                if path.suffix == ".png"
             ]
         # Random shuffle
         random.shuffle(self.__dataset)
@@ -180,7 +181,7 @@ def load_annotation(path: Path):
         annotation[
             # Switch train/valid by tvt-column value (0: train, 1: valid)
             ['train', 'valid', 'test', 'IGNORE'][int(row['tvt'])]
-        ].append((row['number'], row['OS']))     # Append annotation tuple
-        # ].append((row['number'], row['label']))     # Append annotation tuple
+        ].append((row['number'], row['label']))     # Append annotation tuple
+        # ].append((row['number'], row['OS']))     # Append annotation tuple
 
     return annotation
