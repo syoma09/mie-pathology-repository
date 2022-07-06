@@ -128,17 +128,24 @@ def main():
     patch_size = 1024, 1024
     stride = 512, 512
 
-    # optim = 'adam'
-    # cv = 3
-    # cv, date, epoch = 0, "20220430_115010", 6
-    cv, date, epoch = 1, "20220430_115235", 54
-    # cv, date, epoch = 2, "20220506_120337", 263
-    # cv, date, epoch = 3, "20220506_101659", 26
+    # 3-OS
+    # cv, date, epoch = 0, "20220615_143124", 292
+    # cv, date, epoch = 1, "20220615_143117", 185
+    # cv, date, epoch = 2, "20220615_150709", 5
+    # cv, date, epoch = 3, "20220616_110237", 200
+
+    # 3-MFS
+    # cv, date, epoch = 0, "20220617_122426", 249
+    # cv, date, epoch = 1, "20220616_183431", 45
+    # cv, date, epoch = 2, "20220620_132834", 182
+    cv, date, epoch = 3, "20220620_132625", 224
 
     # Load annotation
     annotation = load_annotation(Path(
         # f"~/workspace/mie-pathology/_data/survival_cls2/cv{cv}.csv"
-        f"../_data/20220428_3os/cv{cv}.csv"
+        # f"../_data/20220428_3os/cv{cv}.csv"
+        # f"../_data/20220610_3os/cv{cv}.csv"
+        f"../_data/20220610_3mfs/cv{cv}.csv"
     ).expanduser())
 
     model_path = Path(
@@ -158,7 +165,8 @@ def main():
 
     # Subject
     list_df = {}
-    for dataset in ['valid']:
+    # for dataset in ['valid']:
+    for dataset in ['test']:
         if len(annotation[dataset]) == 0:
             continue
         # print(annotation[dataset])
