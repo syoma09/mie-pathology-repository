@@ -14,7 +14,7 @@ def get_tb_value(log: Path, tag: str) -> [float]:
         for e in tf.compat.v1.train.summary_iterator(str(log))
         for v in e.summary.value
         if v.tag == tag
-    ]   # [:100]
+    ][:300]
     # return [
     #     v.simple_value
     #     for e in tf.data.TFRecordDataset(log)
@@ -42,7 +42,8 @@ def plot_loss(log: Path, dataset):
     plt.grid()
 
     plt.tight_layout()
-    plt.savefig(f"{dataset}_loss.jpg")
+    plt.savefig((log / "..").resolve() / f"{dataset}_loss.jpg")
+    plt.savefig((log / "..").resolve() / f"{dataset}_loss.pdf")
 
     plt.close()
 
@@ -67,7 +68,8 @@ def plot_metric(path: Path, dataset, metric_type):
     plt.grid()
 
     plt.tight_layout()
-    plt.savefig(f"{tag}.jpg")
+    plt.savefig((path / "..").resolve() / f"{tag}.jpg")
+    plt.savefig((path / "..").resolve() / f"{tag}.pdf")
 
     plt.close()
 
@@ -78,8 +80,14 @@ def main():
     # # Find latest logging directory
     # tf_log = sorted(tf_log.iterdir())[-1]
     # Or manually select
-    # tf_log /= "20211228_w2014s512cv3_adam"
-    tf_log /= "20220222_160214"
+    # tf_log /= "20220615_143124"     # 3OS-cv0
+    # tf_log /= "20220615_143117"
+    # tf_log /= "20220615_150709"
+    # tf_log /= "20220616_110237"
+    # tf_log /= "20220617_122426"   # 3MFS-cv0
+    # tf_log /= "20220616_183431"
+    # tf_log /= "20220620_132834"
+    tf_log /= "20220620_132625"
 
     print("Process log in", tf_log)
 

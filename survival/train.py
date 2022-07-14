@@ -36,7 +36,12 @@ with open('/proc/meminfo', 'r') as f:
     print(mem_total)
 
 
-def create_dataset(src: Path, dst: Path, annotation: Path, size, stride):
+def create_dataset(
+        src: Path, dst: Path,
+        annotation: Path,
+        size, stride,
+        index: int = None, region: int = None
+):
     # Load annotation
     df = pd.read_csv(annotation)
     print(df)
@@ -52,8 +57,8 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size, stride):
             print(f"Subject #{number} already exists. Skip.")
             continue
 
-        path_svs = src / "svs" / f"{number}.svs"
-        path_xml = src / "xml" / f"{number}.xml"
+        path_svs = src / f"{number}.svs"
+        path_xml = src / f"{number}.xml"
         if not path_svs.exists() or not path_xml.exists():
             print(f"{path_svs} or {path_xml} do not exists.")
             continue
@@ -66,12 +71,12 @@ def create_dataset(src: Path, dst: Path, annotation: Path, size, stride):
         # save_patches(path_svs, path_xml, base, size=size, stride=stride)
 
     # Approx., 1 thread use 20GB
-    # n_jobs = int(mem_total / 20)
-    n_jobs = 8
+    n_jobs = int(mem_total / 20)
+    # n_jobs = 8
     print(f'Process in {n_jobs} threads.')
     # Parallel execution
     Parallel(n_jobs=n_jobs)([
-        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize)
+        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize, index, region)
         for path_svs, path_xml, base, size, stride, resize in args
     ])
 
@@ -80,38 +85,34 @@ def main():
     patch_size = 1024, 1024
     stride = 512, 512
     # patch_size = 256, 256
-    dataset_root = get_dataset_root_path(
-        patch_size=patch_size,
-        stride=stride
-    )
 
     # Log, epoch-model output directory
     log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_root.mkdir(parents=True, exist_ok=True)
 
     annotation_path = Path(
-        # f"~/workspace/mie-pathology/_data/survival_cls2.csv"
-        # f"~/workspace/mie-pathology/_data/survival_2dfs.csv"
-        # f"~/workspace/mie-pathology/_data/survival_3os.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls2/cv0.csv"
-        # "~/workspace/mie-pathology/_data/survival_cls2/cv1.csv"
-        # "~/workspace/mie-pathology/_data/survival_cls2/cv2.csv"
-        # f"~/workspace/mie-pathology/_data/survival_cls2/cv3.csv"
-        "~/workspace/mie-pathology/_data/pick_up/cv0.csv"
-        # "~/workspace/mie-pathology/_data/pick_up/cv1.csv"
-        # "~/workspace/mie-pathology/_data/pick_up/cv2.csv"
-        # "~/workspace/mie-pathology/_data/pick_up/cv3.csv"
+        # "../_data/20220610_3os.csv"
+        "../_data/20220610_3os/cv0.csv"
+        # "../_data/20220610_3os/cv1.csv"
+        # "../_data/20220610_3os/cv2.csv"
+        # "../_data/20220610_3os/cv3.csv"
     ).expanduser()
 
     # Create dataset if not exists
+    dataset_root = get_dataset_root_path(
+        patch_size=patch_size,
+        stride=stride
+    )
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
+
     # Existing subjects are ignored in the function
     create_dataset(
-        src=Path("~/workspace/mie-pathology/_data/").expanduser(),
+        src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
         dst=dataset_root,
         annotation=annotation_path,
-        size=patch_size, stride=stride
+        size=patch_size, stride=stride,
+        index=1, region=None
     )
 
     # Load annotations
@@ -142,7 +143,7 @@ def main():
 
     tensorboard = SummaryWriter(log_dir=str(log_root))
 
-    epochs = 1000
+    epochs = 300
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
 

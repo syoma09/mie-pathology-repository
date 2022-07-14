@@ -27,7 +27,7 @@ def count_subject_image(df):
     return counts
 
 
-def split_cv(counts, cv=4):
+def split_cv(counts, cv: int):
     counts = [
         (subject, count)
         for subject, count in counts.items()
@@ -65,26 +65,45 @@ def split_cv(counts, cv=4):
     ]
 
 
+def split_tvt(cv: int, test: bool = False):
+    """
+
+    :param cv:
+    :param test:
+    :return:
+    """
+    for i in range(cv):
+        i_valid = {i}
+        i_test = set(
+            [(i + 1) % cv] if test else []
+        )
+        i_train = set(range(cv)) - i_valid - i_test
+
+        print(f"cv-#{i}: train{i_train}, valid{i_valid}, test{i_test}")
+
+        yield i_train, i_valid, i_test
+
+
 def main():
     # Source annotation file
     src = Path(
-        # "~/workspace/mie-pathology/_data/survival_cls2.csv"
-        "~/workspace/mie-pathology/_data/pick_up.csv"
-    ).expanduser()
+        "../_data/20220610_3mfs.csv"
+    ).expanduser().absolute()
     # Destination root
     dst = src.parent / src.stem
     dst.mkdir(parents=True, exist_ok=True)
 
     # Load annotation
     df = pd.read_csv(src)
+    fold = 4    # Number of fold
 
     # Retrieve non-survivers
     df_neg = df[df.label == 0]
-    cv_neg = split_cv(count_subject_image(df_neg))
+    cv_neg = split_cv(count_subject_image(df_neg), cv=fold)
 
     # Retrieve survivers
     df_pos = df[df.label == 1]
-    cv_pos = split_cv(count_subject_image(df_pos))
+    cv_pos = split_cv(count_subject_image(df_pos), cv=fold)
 
     # Sort
     def sort_key(dataset):
@@ -93,20 +112,39 @@ def main():
         )
     cv_neg = sorted(cv_neg, key=sort_key)
     cv_pos = sorted(cv_pos, key=sort_key, reverse=True)
+    print(cv_pos)
 
-    for cv, (valid_neg, valid_pos) in enumerate(zip(cv_neg, cv_pos)):
+    for cv, (i_train, i_valid, i_test) in enumerate(split_tvt(cv=fold, test=True)):
         # Set all data as training (tvt==0)
-        df['tvt'] = 0
-        for subject, _ in valid_neg + valid_pos:
-            df.loc[
-                df['number'].str.startswith(subject), 'tvt'
-            ] = 1
+        df['tvt'] = -1
+
+        # Train=0, Valid=1, Test=2
+        for tvt, cvs in enumerate([i_train, i_valid, i_test], start=0):
+            for i in cvs:
+                for subject, _ in cv_pos[i] + cv_neg[i]:
+                    df.loc[
+                        df['number'].str.startswith(f"{subject}-"), 'tvt'
+                    ] = tvt
 
         print("##################################################")
         print(df)
         df.to_csv(
             dst / f"cv{cv}.csv", index=False
         )
+
+    # for cv, (valid_neg, valid_pos) in enumerate(zip(cv_neg, cv_pos)):
+    #     # Set all data as training (tvt==0)
+    #     df['tvt'] = 0
+    #     for subject, _ in valid_neg + valid_pos:
+    #         df.loc[
+    #             df['number'].str.startswith(f"{subject}-"), 'tvt'
+    #         ] = 1
+    #
+    #     print("##################################################")
+    #     print(df)
+    #     df.to_csv(
+    #         dst / f"cv{cv}.csv", index=False
+    #     )
 
 
 if __name__ == '__main__':
