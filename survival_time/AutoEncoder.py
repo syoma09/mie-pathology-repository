@@ -8,34 +8,80 @@ import torchvision
 import yaml
 import math
 import numpy
+import random
+import pandas as pd
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
+from joblib import Parallel, delayed
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
+from function import load_annotation, get_dataset_root_path
+from data.svs import save_patches
+
 
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:1'
+device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root, subjects):
+    def __init__(self, root, annotations):
         super(PatchDataset, self).__init__()
         self.transform = torchvision.transforms.Compose([
             # torchvision.transforms.Resize((224, 224)),
             torchvision.transforms.ToTensor(),
-            # torchvision.transforms.Normalize(0.5, 0.5)
+            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
         ])
-        self.paths = []
+        self.__dataset = []
+        for subject, label in annotations:
+            self.__dataset += [
+                (path, label)   # Same label for one subject
+                for path in (root / subject).iterdir()
+        ]
+
+
+
+
+        # Random shuffle
+        random.shuffle(self.__dataset)
+        # reduce_pathces = True
+        # if reduce_pathces is True:
+        #     data_num = len(self.__dataset) // 5
+        #     self.__dataset = self.__dataset[:data_num]
+
+        # self.__num_class = len(set(label for _, label in self.__dataset))
+        self.__num_class = 3
+        # self.__dataset = self.__dataset[:512]
+
+        print('PatchDataset')
+        print('  # patch :', len(self.__dataset))
+        print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
+        print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
+        print('  # of 2  :', len([l for _, l in self.__dataset if (22 < l) & (l <= 33)]))
+        print('  # of 3  :', len([l for _, l in self.__dataset if (33 < l) & (l <= 44)]))
+        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+
+        '''self.paths = []
         for subject in subjects:
-            self.paths += list((root / subject).iterdir())
+            print(subject)
+            path = []
+            path += list((root / subject).iterdir())
+            if(subject == "57-10" or subject == "57-11"):
+                self.paths += random.sample(path,4000)
+            elif(subject == "38-4" or subject == "38-5"):
+                self.paths += random.sample(path,len(path))
+            elif(len(path) < 2000):
+                self.paths += random.sample(path,len(path))
+            else:
+                self.paths+= random.sample(path,2000)
+            self.paths += list((root / subject).iterdir())'''
         #print(self.paths[0])
-        #print(len(self.paths)
+        print(len(self.__dataset))
     def __len__(self):
-        return len(self.paths)
+        return len(self.__dataset)
     def __getitem__(self, item):
         """
         :param item:    Index of item
@@ -43,24 +89,88 @@ class PatchDataset(torch.utils.data.Dataset):
                         Label is always "10" <= MetricLearning
         """
     # img = self.data[item, :, :, :].view(3, 32, 32)
-        img = Image.open(self.paths[item]).convert('RGB')
+        path, label = self.__dataset[item]
+        img = Image.open(path).convert('RGB')
         img = self.transform(img)
         #img = torchvision.transforms.functional.to_tensor(img)
 
         # s0_st34.229508200000005_e0_et34.229508200000005_00000442img.png
-        name = self.paths[item].name                # Filename
-        label = float(str(name).split('_')[1][2:])  # Survival time
-        # classification
-        '''if(label < 10):
-            label = 0
-        elif(label < 31):
-            label = 1
+        #name = self.paths[item].name                # Filename
+        #label = float(str(name).split('_')[1][2:])  # Survival time
+
+        # Normalize
+        #label /= 90.
+        '''if(label < 13):
+            label_class = 0
+        elif(label < 34):
+            label_class = 1
         elif(label < 67):
-            label = 2'''
-            # Tensor
+            label_class = 2
+        if(label < 11):
+            label_class = 0
+        elif(label < 22):
+            label_class = 1
+        elif(label < 33):
+            label_class = 2
+        elif(label < 44):
+            label_class = 3
+        elif(label < 44):
+            label_class = 4
+        elif(label < 36):
+            label_class = 5
+        elif(label < 42):
+            label_class = 6
+        elif(label < 48):
+            label_class = 7
+        elif(label < 24):
+            label_class = 11
+        elif(label < 26):
+            label_class = 12
+        elif(label < 28):
+            label_class = 13
+        elif(label < 30):
+            label_class = 14
+        elif(label < 32):
+            label_class = 15
+        elif(label < 34):
+            label_class = 16
+        elif(label < 36):
+            label_class = 17
+        elif(label < 38):
+            label_class = 18
+        elif(label < 40):
+            label_class = 19
+        elif(label < 42):
+            label_class = 20
+        elif(label < 44):
+            label_class = 21
+        elif(label < 46):
+            label_class = 22
+        elif(label < 48):
+            label_class = 23
+        elif(label < 50):
+            label_class = 24
+        elif(label < 52):
+            label_class = 25
+        elif(label < 54):
+            label_class = 26
+        elif(label < 56):
+            label_class = 27
+        elif(label < 58):
+            label_class = 28
+        elif(label < 60):
+            label_class = 29
+        elif(label < 62):
+            label_class = 30
+        elif(label < 64):
+            label_class = 31
+        elif(label < 66):
+            label_class = 32
+        elif(label < 68):
+            label_class = 33'''
+        # Tensor
         label = torch.tensor(label, dtype=torch.float)
         return img, label
-
     # @classmethod
     # def load_list(cls, root):
     #     # 顎骨正常データ取得と整形
@@ -111,7 +221,7 @@ class AutoEncoder2(torch.nn.Module):
     def forward(self, x):
         x = self.enc(x)
         #print(x.shape)
-        x = x.view(-1,self.num_flat_features(x))
+        #x = x.view(-1,self.num_flat_features(x))
         x = self.dec(x)
         #print(x.shape)
         return x
@@ -135,7 +245,7 @@ def imshow(img):
 
 def create_model():
     input_size = 3 * 256 * 256
-    enc = torchvision.models.resnet18(pretrained=False)
+    enc = torchvision.models.resnet34(pretrained=False)
     dec =  torch.nn.Sequential(
     torch.nn.ConvTranspose2d(512, 1024, kernel_size=4, stride=2, padding=1),
     torch.nn.BatchNorm2d(1024),
@@ -172,20 +282,88 @@ def create_model():
 
     return net
 
+def create_dataset(
+        src: Path, dst: Path,
+        annotation: Path,
+        size, stride,
+        index: int = None, region: int = None
+):
+    # Lad annotation
+    df = pd.read_csv(annotation)
+    #print(df)
+    args = []
+    for _, subject in df.iterrows():
+        number = subject['number']
+        subject_dir = dst / str(number)
+        if not subject_dir.exists():
+            subject_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            print(f"Subject #{number} already exists. Skip.")
+            continue
+        
+        path_svs = src / f"{number}.svs"
+        path_xml = src / f"{number}.xml"
+        if not path_svs.exists() or not path_xml.exists():
+            print(f"{path_svs} or {path_xml} do not exists.")
+            continue
+
+        base = subject_dir / 'patch'
+        resize = 256, 256
+        args.append((path_svs, path_xml, base, size, stride, resize))
+        # # Serial execution
+        # save_patches(path_svs, path_xml, base, size=size, stride=stride)
+
+    # Approx., 1 thread use 20GB
+    # n_jobs = int(mem_total / 20)
+    n_jobs = 8
+    print(f'Process in {n_jobs} threads.')
+    # Parallel execution
+    Parallel(n_jobs=n_jobs)([
+        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize, index, region)
+        for path_svs, path_xml, base, size, stride, resize in args
+    ])
+    #print('args',args)
 
 def main():
+    patch_size = 512, 512
+    stride = 512, 512
+    # patch_size = 256, 256
+    dataset_root = get_dataset_root_path(
+        patch_size=patch_size,
+        stride=stride
+    )
+    
+    # Log, epoch-model output directory
+    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_root.mkdir(parents=True, exist_ok=True)
+    annotation_path = Path(
+        "../_data/survival_time_cls/20220413_aut2.csv"
+    ).expanduser()
+    # Create dataset if not exists
+    if not dataset_root.exists():
+        dataset_root.mkdir(parents=True, exist_ok=True)
+    # Existing subjects are ignored in the function
+    create_dataset(
+        src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
+        dst=dataset_root,
+        annotation=annotation_path,
+        size=patch_size, stride=stride,
+        index=1, region=None
+    )
+    # Load annotations
+    annotation = load_annotation(annotation_path)
     # echo $HOME == ~
-    src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
+    #src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
     # Write dataset on SSD (/mnt/cache/)
-    dataset_root = Path('/mnt/cache')/ os.environ.get('USER') / 'mie-pathology'
+    #dataset_root = Path("/mnt/cache").expanduser()/ os.environ.get('USER') / 'mie-pathology'
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
-    # Load train/valid yaml
+    '''# Load train/valid yaml
     with open(src / "survival_time.yml", "r") as f:
-        yml = yaml.safe_load(f)
+        yml = yaml.safe_load(f)'''
 
     # print("PatchDataset")
     # d = PatchDataset(root, yml['train'])
@@ -197,11 +375,11 @@ def main():
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, yml['train']), batch_size=batch_size, shuffle=True,
+        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, yml['valid']), batch_size=batch_size,
+        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
         num_workers=num_workers
     )
     '''iterator = iter(train_loader)
@@ -297,4 +475,3 @@ def main():
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 if __name__ == '__main__':
     main()
-

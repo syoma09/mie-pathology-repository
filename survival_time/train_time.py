@@ -9,32 +9,66 @@ import yaml
 import math
 import random
 import numpy as np
+import pandas as pd
 import sys
 import matplotlib.pyplot as plt
 import AutoEncoder
 from torch.utils.tensorboard import SummaryWriter
+from joblib import Parallel, delayed
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
+
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from collections import OrderedDict
+from function import load_annotation, get_dataset_root_path
+from data.svs import save_patches
 
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:1'
+device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root, subjects):
+    def __init__(self, root, annotations):
         super(PatchDataset, self).__init__()
         self.transform = torchvision.transforms.Compose([
             # torchvision.transforms.Resize((224, 224)),
             torchvision.transforms.ToTensor(),
             #torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
         ])
-        self.paths = []
+        self.__dataset = []
+        for subject, label in annotations:
+            self.__dataset += [
+                (path, label)   # Same label for one subject
+                for path in (root / subject).iterdir()
+        ]
+
+
+
+
+        # Random shuffle
+        random.shuffle(self.__dataset)
+        # reduce_pathces = True
+        # if reduce_pathces is True:
+        #     data_num = len(self.__dataset) // 5
+        #     self.__dataset = self.__dataset[:data_num]
+
+        # self.__num_class = len(set(label for _, label in self.__dataset))
+        self.__num_class = 3
+        # self.__dataset = self.__dataset[:512]
+
+        print('PatchDataset')
+        print('  # patch :', len(self.__dataset))
+        print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
+        print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
+        print('  # of 2  :', len([l for _, l in self.__dataset if (22 < l) & (l <= 33)]))
+        print('  # of 3  :', len([l for _, l in self.__dataset if (33 < l) & (l <= 44)]))
+        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+
+        '''self.paths = []
         for subject in subjects:
             print(subject)
             path = []
@@ -47,10 +81,11 @@ class PatchDataset(torch.utils.data.Dataset):
                 self.paths += random.sample(path,len(path))
             else:
                 self.paths+= random.sample(path,2000)
+            self.paths += list((root / subject).iterdir())'''
         #print(self.paths[0])
-        print(len(self.paths))
+        print(len(self.__dataset))
     def __len__(self):
-        return len(self.paths)
+        return len(self.__dataset)
     def __getitem__(self, item):
         """
         :param item:    Index of item
@@ -58,13 +93,14 @@ class PatchDataset(torch.utils.data.Dataset):
                         Label is always "10" <= MetricLearning
         """
     # img = self.data[item, :, :, :].view(3, 32, 32)
-        img = Image.open(self.paths[item]).convert('RGB')
+        path, label = self.__dataset[item]
+        img = Image.open(path).convert('RGB')
         img = self.transform(img)
         #img = torchvision.transforms.functional.to_tensor(img)
 
         # s0_st34.229508200000005_e0_et34.229508200000005_00000442img.png
-        name = self.paths[item].name                # Filename
-        label = float(str(name).split('_')[1][2:])  # Survival time
+        #name = self.paths[item].name                # Filename
+        #label = float(str(name).split('_')[1][2:])  # Survival time
 
         # Normalize
         #label /= 90.
@@ -74,23 +110,23 @@ class PatchDataset(torch.utils.data.Dataset):
             label_class = 1
         elif(label < 67):
             label_class = 2'''
-        if(label < 12):
+        if(label < 11):
             label_class = 0
-        elif(label < 24):
+        elif(label < 22):
             label_class = 1
-        elif(label < 36):
+        elif(label < 33):
             label_class = 2
-        elif(label < 48):
+        elif(label < 44):
             label_class = 3
-        '''elif(label < 30):
+        '''elif(label < 44):
             label_class = 4
         elif(label < 36):
             label_class = 5
         elif(label < 42):
             label_class = 6
         elif(label < 48):
-            label_class = 7'''
-        '''elif(label < 24):
+            label_class = 7
+        elif(label < 24):
             label_class = 11
         elif(label < 26):
             label_class = 12
@@ -230,7 +266,7 @@ def valid_loss(y_pred,y_class):
     loss = np.zeros(len(y_class))
     for i in range (len(y_pred)):
         for j in range (N):
-            loss[i] += y_pred[i][j] * (12 * j + 6)
+            loss[i] += y_pred[i][j] * (11 * j + 5.5)
     loss_tensor = torch.tensor((loss).T, device = device,dtype = torch.float32, requires_grad=True)
     return loss_tensor
 
@@ -242,7 +278,7 @@ class AutoEncoder2(torch.nn.Module):
     def forward(self, x):
         x = self.enc(x)
         print(num_flat_features(x))
-        #x = x.view(-1,self.num_flat_features(x))
+        x = x.view(-1,self.num_flat_features(x))
         print(x.size())
         x = self.dec(x)
         print(x.size())
@@ -262,19 +298,89 @@ def imshow(img):
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
 
+def create_dataset(
+        src: Path, dst: Path,
+        annotation: Path,
+        size, stride,
+        index: int = None, region: int = None
+):
+    # Lad annotation
+    df = pd.read_csv(annotation)
+    #print(df)
+
+    args = []
+    for _, subject in df.iterrows():
+        number = subject['number']
+        subject_dir = dst / str(number)
+        '''if not subject_dir.exists():
+            subject_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            print(f"Subject #{number} already exists. Skip.")
+            continue'''
+        
+        path_svs = src / f"{number}.svs"
+        path_xml = src / f"{number}.xml"
+        if not path_svs.exists() or not path_xml.exists():
+            print(f"{path_svs} or {path_xml} do not exists.")
+            continue
+
+        base = subject_dir / 'patch'
+        resize = 256, 256
+        args.append((path_svs, path_xml, base, size, stride, resize))
+        # # Serial execution
+        # save_patches(path_svs, path_xml, base, size=size, stride=stride)
+
+    # Approx., 1 thread use 20GB
+    # n_jobs = int(mem_total / 20)
+    n_jobs = 8
+    print(f'Process in {n_jobs} threads.')
+    # Parallel execution
+    Parallel(n_jobs=n_jobs)([
+        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize, index, region)
+        for path_svs, path_xml, base, size, stride, resize in args
+    ])
+    #print('args',args)
+
 def main():
-    # echo $HOME == ~
-    src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
-    # Write dataset on SSD (/mnt/cache/)
-    dataset_root = Path("/mnt/cache").expanduser()/ os.environ.get('USER') / 'mie-pathology'
+    patch_size = 1024, 1024
+    stride = 512, 512
+    # patch_size = 256, 256
+    dataset_root = get_dataset_root_path(
+        patch_size=patch_size,
+        stride=stride
+    )
+    
+    # Log, epoch-model output directory
+    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_root.mkdir(parents=True, exist_ok=True)
+    annotation_path = Path(
+        "../_data/survival_time_cls/20220413_classification.csv"
+    ).expanduser()
+    # Create dataset if not exists
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
+    # Existing subjects are ignored in the function
+    '''create_dataset(
+        src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
+        dst=dataset_root,
+        annotation=annotation_path,
+        size=patch_size, stride=stride,
+        index=1, region=None
+    )'''
+    # Load annotations
+    annotation = load_annotation(annotation_path)
+    # echo $HOME == ~
+    #src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
+    # Write dataset on SSD (/mnt/cache/)
+    #dataset_root = Path("/mnt/cache").expanduser()/ os.environ.get('USER') / 'mie-pathology'
+    '''if not dataset_root.exists():
+        dataset_root.mkdir(parents=True, exist_ok=True)'''
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
     # Load train/valid yaml
-    with open(src / "survival_time.yml", "r") as f:
-        yml = yaml.safe_load(f)
+    '''with open(src / "survival_time.yml", "r") as f:
+        yml = yaml.safe_load(f)'''
 
     # print("PatchDataset")
     # d = PatchDataset(root, yml['train'])
@@ -286,11 +392,11 @@ def main():
 
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, yml['train']), batch_size=batch_size, shuffle=True,
+        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, yml['valid']), batch_size=batch_size,
+        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
         num_workers=num_workers
     )
     '''iterator = iter(train_loader)
@@ -301,27 +407,24 @@ def main():
     '''
     net = AutoEncoder.create_model()
     net.load_state_dict(torch.load(
-        dataset_root / '20220222_032128model00257.pth', map_location=device)
+        dataset_root / '20220623_185508model00190.pth', map_location=device)
     )
     #num_features = net.fc.in_features
     # print(num_features)  # 512
     #net.dec = nn.ReLU()
     net.dec = nn.Sequential(
-        #nn.Linear(512, 512, bias=True),
-        #nn.Linear(512, 512, bias=True),
+        nn.Linear(512, 512, bias=True),
+        nn.Linear(512, 512, bias=True),
         nn.Linear(512, 4, bias=True),
         nn.Softmax(dim=1)
         # nn.Sigmoid()
     )
-    '''for param in net.parameters():
+    for param in net.parameters():
         param.requires_grad = False
     last_layer = list(net.children())[-1]
     print(f'except last layer: {last_layer}')
     for param in last_layer.parameters():
-        param.requires_grad = True'''
-    net.load_state_dict(torch.load(
-        dataset_root / '20220317_114715model05299.pth', map_location=device)
-        )
+        param.requires_grad = True
     net = net.to(device)
     # net = torch.nn.DataParallel(net).to(device)
     #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
@@ -336,7 +439,7 @@ def main():
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
-    print(net)
+    #print(net)
     
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
@@ -372,7 +475,7 @@ def main():
         print("train_loss",train_loss)
         print('')
         print('    Saving model...')
-        torch.save(net.state_dict(), dataset_root / f"{model_name}{epoch:05}.pth")
+        torch.save(net.state_dict(), log_root / f"{model_name}{epoch:05}.pth")
         # Switch to evaluation mode
         net.eval()
         # On training data
@@ -406,6 +509,10 @@ def main():
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
                 valid_loss_mae += loss_mae.item() / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
+                print("\r  Validating... ({:6}/{:6})[{}]".format(
+                    batch, len(valid_loader),
+                    ('=' * (30 * batch // len(valid_loader)) + " " * 30)[:30]
+                ), end="")
             """for x, y_true in train_loader:
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
