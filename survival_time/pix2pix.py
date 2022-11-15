@@ -79,11 +79,237 @@ class PatchDataset(torch.utils.data.Dataset):
         gray = self.transform(gray)
         return img, gray
 
+class Discriminator(nn.module):
+    def __init__(self):
+        super(Discriminator,self).__init__()
+        # 70*70patchGAN識別器モデルの定義
+        # 2つの画像を結合したものが入力となるため、チャンネル数は3*2=6となる
+        self.model = nn.Sequential(
+            nn.Conv2d(6,64,kernel_size=4,stride=2,padding=1),
+            nn.LeakyReLU(0.2,True),
+            self.__layer(64,128),
+            self.__layer(128,256),
+            self.__layer(256,512,stride=1),
+            nn.Conv2d(512,1,kernel_size=4,stride=1,padding=1),
+        )
+    
+    def __layer(self,input,output,stride=2):
+        #DownSampling
+        return nn.Sequential(
+            nn.Conv2d(input,output,kernel_size=4,stride=stride,padding=1)
+            nn.BatchNorm2d(output),
+            nn.LeakyReLU(0.2,True)
+        )
+
+    def forward(self,x):
+        return self.model(x)
+
+class Generator(nn.module):
+    def __init__(self):
+        super(Generator,self).__init__()
+        # U-net1のEncoder部分
+        self.down0 = nn.Conv2d(3,64,kernel_size=4,stride=2,padding=1)
+        self.down1 = self.__encoder_block(64,128)
+        self.down2 = self.__encoder_block(128,256)
+        self.down3 = self.__encoder_block(256,512)
+        self.down4 = self.__encoder_block(512,512)
+        self.down5 = self.__encoder_block(512,512)
+        self.down6 = self.__encoder_block(512,512)
+        self.down7 = self.__encoder_block(512,512,use_norm(False))
+
+        # U-netのDecoder部分
+        self.up7 = self.__decoder_block(512,512)
+        self.up6 = self.__decoder_block(1024,512,use_dropout=True)
+        self.up5 = self.__decoder_block(1024,512,use_dropout=True)
+        self.up4 = self.__decoder_block(1024,512,use_dropout=True)
+        self.up3 = self.__decoder_block(1024,256)
+        self.up2 = self.__decoder_block(512,128)
+        self.up1 = self.__decoder_block(256,64)
+        # Gの最終出力
+        self.up0 = nn.Sequential(
+            self.__decoder_block(128,3, use_norm(False)),
+            nn.Tanh(),
+        )
+
+    def __encoder_block(self,input,output,use_norm=True):
+        # LeakyReLU+Downsampling
+        layer = [
+            nn.LeakyReLU(0.2,True),
+            nn.Conv2d(input,output,kernel_size=4,stride=2,padding=1)  
+        ]
+        #BatchNormalization
+        if use_norm:
+            layer.append(nn.BatchNorm2d(output))
+        return nn.Sequential(*layer)
+
+    def __decoder_block(self,input,output,use_norm=True,dropout=False):
+        #ReLU+Upsampling
+        layer = [
+            nn.ReLU(True),
+            nn.ConvTranspose2d(input,output,kernel_size=4,stride=2,padding=1)
+        ]
+        #BatchNormalization
+        if use_norm:
+            layer.append(nn.BatchNorm2d(output))
+        #Dropout
+        if use_dropout:
+            layer.append(nn.Dropout(0.5))
+        return nn.Sequential(*layer)
+    
+    def forward(self,x):
+        #偽画像の生成
+        x0 = self.down0(x)
+        x1 = self.down1(x0)
+        x2 = self.down2(x1)
+        x3 = self.down3(x2)
+        x4 = self.down4(x3)
+        x5 = self.down5(x4)
+        x6 = self.down6(x5)
+        x7 = self.down7(x6)
+        y7 = self.up7(x7)
+        # Encoderの出力をDecoderの入力にSkipConnectionで接続
+        y6 = self.up6(self.concat(x6,y7))
+        y5 = self.up5(self.concat(x5,y6))
+        y4 = self.up4(self.concat(x4,y5))
+        y3 = self.up3(self.concat(x3,y4))
+        y2 = self.up2(self.concat(x2,y3))
+        y1 = self.up1(self.concat(x1,y2))
+        y0 = self.up0(self.concat(x0,y1))
+
+        return y0
+    
+    def concat(self,x,y):
+        #特徴マップの結合
+        return torch.cat({x,y}, dim = 1)
+
+class GANLoss(nn.module):
+    def __init__(self):
+        super(GANLoss,self).__init__()
+
+        self.register_buffer('real_label',torch.tensor(1.0))
+        self.register_buffer('fake_label',torch.tensor(0.0))
+        # Real/Fake識別関数の損失を、シグモイド+バイナリクロスエントロピーで計算
+        self.loss = nn.BCEWithLogitsLoss()
+    
+    def __call__(self,prediction, is_real):
+        if is_real:
+            target_tensor = self.real_label
+        else:
+            target_tensor = self.fake_label
+        
+        return self.loss(prediction,target_tensor.expand_as(prediction))
+
+class pix2pix():
+    def __init__(self,config):
+        self.config = config
+
+        #生成器Gのオブジェクト取得とデバイス設定
+        self.netG = Generator().to(self.config.device)
+        #ネットワークの初期化
+        self.netG.apply(self.__weights_init)
+
+        #識別器Dのオブジェクト取得とデバイス設定
+        self.netD = Discriminator().to(self.config.device)
+        #Dのネットワークの初期化
+        self.netD.apply(self.__weights_init)
+
+        #オプティマイザの初期化
+        self.optimizerG = optim.Adam(self.netG.parameters(),lr=0.0002,betas(0.5,0.999))
+        self.optimizerD = optim.Adam(self.netD.parameters(),lr=0.0002,betas(0.5,0.999))
+        #目的(損失関数)の設定
+        #GAN損失(Adcersarial損失)
+        self.criterionGAN = GANLoss().to(self.config.device)
+        #L1損失
+        self.criterionL1 = nn.L1Loss()
+
+        #学習率スケジューラ設定
+        self.schedulerG = optim.lr_scheduler.LambdaLR(self.optimizerG, self.__modify_learning_rate)
+        self.schedulerD = optim.lr_scheduler.LambdaLR(self.optimizerD, self.__modify_learning_rate)
+
+        self.training_start_time = time.time()
+
+        self.writer = SurmmaryWriter(logdir=config.l0g_dir)
+
+    def update_learning_rate(self):
+        #学習率の更新、毎エポックごとに呼ばれる
+        self.schedulerG.step()
+        self.schedulerD.step()
+    
+    def __modify_learning_rate(self,epoch):
+        #学習率の計算
+        if self.config.epochs_lr_decay_start < 0:
+            return 1.0
+        
+        delta = max(0,epoch - self.config.epochs_lr_decay_start) / float(self.config.epochs_lr_decay)
+        return max(0.0, 1.0 - delta)
+
+    def __weight_init(self, m):
+        #パラメータ初期値の設定
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            m.weght.data.normal_(0.0,0.02)
+        elif classname.find('BatchNorm') != -1:
+            m.weght.data.normal_(1.0,0.02)
+            m.bias.data.fill_(0)
+        
+    def train(self, data, batches_done):
+        #ドメインAのラベル画像とドメインBの正解画像を設定
+        self.realA = data['A'].to(self.config.device)
+        self.realB = data['B'].to(self.config.device)
+
+        #生成器Gで画像生成
+        fakeB = self.netG(self.realA)
+
+        #識別器Dの学習開始
+        #条件画像(A)と生成画像(B)を結合
+        fakeAB = torch.cat((self.realA, fakeB),dim=1)
+        pred_fake = self.netD(fakeAB.detach())
+        # 偽画像を入力したときの識別機DのGAN損失を算出
+        lossD_fake = self.criterionGAN(pred_fake,False)
+
+        #条件画像(A)と正解画像(B)を結合
+        realAB = torch.cat((self.realA,self,realB),dim=1)
+        #識別機Dに正解画像を入力
+        pred_real = self.netD(realAB)
+        #正解画像を入力したときの識別機DのGAN損失を算出
+        lossD_real = self.criterionGAN(pred_real, True)
+
+        #偽画像と正解画像のGAN損失の合計に0.5を掛ける
+        lossD = (lossD_fake + lossD_real) * 0.5
+
+        #Dの勾配を0に設定
+        self.optimizerD.zero_grad()
+        #Dの逆伝播を計算
+        lossD.backward()
+        #Dの重みを更新
+        self.optimizerD.step()
+
+        #生成器Gの学習開始
+        #識別器Dに生成画像を入力
+        with torch.no_grad():
+            pred_fake = self.netD(fakeAB)
+
+        #生成器GのGAN損失を算出
+        lossG_GAN = self.criterionGAN(pred_fake,True)
+        #生成器GのL1損失を算出
+        lossG_L1 = self.criterionL1(fakeB,self.realB) * self.config.lambda_L1
+
+        #生成器Gの損失を合計
+        lossG = lossG_GAN + lossG_L1
+
+        #Gの勾配を0に設定
+        self.optimizerG.zero_grad()
+        #Dの逆伝播を計算
+        lossG.backward()
+        #Dの重みを更新
+        self.optimizerG.step()
+
+
 def create_dataset(
-        src: Path, dst: Path,
-        annotation: Path,
-        size, stride,
-        index: int = None, region: int = None
+    src: Path, dst: Path,
+    annotation: Path,
+    size, stride,
+    index: int = None, region: int = None
 ):
     # Lad annotation
     df = pd.read_csv(annotation)
@@ -182,105 +408,13 @@ def main():
         PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
         num_workers=num_workers
     )
-    #model
-    net_G = torch.hub.load('mateuszbuda/brain-segmentation-pytorch', 'unet',
-            in_channels=1, out_channels=3, init_features=256, pretrained=False)
-    net_D = torchvision.models.vgg16(pretrained=False)
     
-    net_G, net_D = net_G.to(device),net_D.to(device)
-    #optim
-    optimizer_G = torch.optim.Adam(net_G.parameters(), lr=0.001)
-    optimizer_D = torch.optim.Adam(net_D.parameters(), lr=0.001)
-    # エラー推移
-    result = {}
-    result["log_loss_G_sum"] = []
-    result["log_loss_G_bce"] = []
-    result["log_loss_G_mae"] = []
-    result["log_loss_D"] = []
+    for epoch in epochs:
+        for batch_num, data in enumerate(train_loader):
+            batches_done = (epoch -1) * len(train_loader) + batch_num
+            model.train(data, batches_done)
 
-    
-    # loss function
-    bce_loss = nn.BCEWithLogitsLoss()
-    mae_loss = nn.L1Loss()
-    
-    for i in range(epochs):
-        # ロスを計算するためのラベル変数 (PatchGAN)
-        ones = torch.ones(8, 3, 256, 256).to(device)
-        zeros = torch.zeros(8, 1, 256, 256).to(device)
-        log_loss_G_sum, log_loss_G_bce, log_loss_G_mae, log_loss_D = [], [], [], []
-        for batch, (real_color, input_gray) in enumerate(train_loader):
-            batch_len = len(real_color)
-            real_color, input_gray = real_color.to(device), input_gray.to(device)
-
-            # Gの訓練
-            # 偽のカラー画像を作成
-            fake_color = net_G(input_gray)
-
-            # 偽画像を一時保存
-            fake_color_tensor = fake_color.detach()
-
-            # 偽画像を本物と騙せるようにロスを計算
-            LAMBD = 100.0 # BCEとMAEの係数
-            out = net_D(torch.cat([fake_color, input_gray], dim=1))
-            loss_G_bce = bce_loss(out, ones[:batch_len])
-            loss_G_mae = LAMBD * mae_loss(fake_color, real_color)
-            loss_G_sum = loss_G_bce + loss_G_mae
-
-            log_loss_G_bce.append(loss_G_bce.item())
-            log_loss_G_mae.append(loss_G_mae.item())
-            log_loss_G_sum.append(loss_G_sum.item())
-
-            # 微分計算・重み更新
-            optimizer_D.zero_grad()
-            optimizer_G.zero_grad()
-            loss_G_sum.backward()
-            optimizer_G.step()
-
-            # Discriminatoの訓練
-            # 本物のカラー画像を本物と識別できるようにロスを計算
-            real_out = net_D(torch.cat([real_color, input_gray], dim=1))
-            loss_D_real = bce_loss(real_out, ones[:batch_len])
-
-            # 偽の画像の偽と識別できるようにロスを計算
-            fake_out = net_D(torch.cat([fake_color_tensor, input_gray], dim=1))
-            loss_D_fake = bce_loss(fake_out, zeros[:batch_len])
-
-            # 実画像と偽画像のロスを合計
-            loss_D = loss_D_real + loss_D_fake
-            log_loss_D.append(loss_D.item())
-
-            # 微分計算・重み更新
-            optimizer_D.zero_grad()
-            optimizer_G.zero_grad()
-            loss_D.backward()
-            optimizer_D.step()
-
-        result["log_loss_G_sum"].append(statistics.mean(log_loss_G_sum))
-        result["log_loss_G_bce"].append(statistics.mean(log_loss_G_bce))
-        result["log_loss_G_mae"].append(statistics.mean(log_loss_G_mae))
-        result["log_loss_D"].append(statistics.mean(log_loss_D))
-        print(f"log_loss_G_sum = {result['log_loss_G_sum'][-1]} " +
-              f"({result['log_loss_G_bce'][-1]}, {result['log_loss_G_mae'][-1]}) " +
-              f"log_loss_D = {result['log_loss_D'][-1]}")
-
-        # 画像を保存
-        if not os.path.exists("stl_color"):
-            os.mkdir("stl_color")
-        # 生成画像を保存
-        torchvision.utils.save_image(fake_color_tensor[:min(batch_len, 100)],
-                                f"stl_color/fake_epoch_{i:03}.png",
-                                range=(-1.0,1.0), normalize=True)
-        torchvision.utils.save_image(real_color[:min(batch_len, 100)],
-                                f"stl_color/real_epoch_{i:03}.png",
-                                range=(-1.0, 1.0), normalize=True)
-
-        # モデルの保存
-        if not os.path.exists("stl_color/models"):
-            os.mkdir("stl_color/models")
-        if i % 10 == 0 or i == 199:
-            torch.save(model_G.state_dict(), f"stl_color/models/gen_{i:03}.pytorch")                        
-            torch.save(model_D.state_dict(), f"stl_color/models/dis_{i:03}.pytorch")                        
+        model.updata_learning_rate()
         
-
 if __name__ == "__main__":
     main()
