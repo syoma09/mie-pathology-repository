@@ -26,83 +26,45 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 device = 'cuda:1'
 if torch.cuda.is_available():
     cudnn.benchmark = True
-class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root, annotations):
-        super(PatchDataset, self).__init__()
-        self.transform = torchvision.transforms.Compose([
-            # torchvision.transforms.Resize((224, 224)),
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
-        ])
+class ConcatDataset(torch.utils.data.Dataset):
+    def __init__(self, *datasets):
+        self.datasets = datasets
         self.__dataset = []
         for subject, label in annotations:
             self.__dataset += [
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
         ]
-
-
-
-
         # Random shuffle
-        #random.shuffle(self.__dataset)
-        # reduce_pathces = True
-        # if reduce_pathces is True:
-        #     data_num = len(self.__dataset) // 5
-        #     self.__dataset = self.__dataset[:data_num]
-
-        # self.__num_class = len(set(label for _, label in self.__dataset))
-        self.__num_class = 3
-        # self.__dataset = self.__dataset[:512]
-
+        random.shuffle(self.__dataset)
+        self.__num_class = 2
         print('PatchDataset')
         print('  # patch :', len(self.__dataset))
         print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
         print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
-        print('  # of 2  :', len([l for _, l in self.__dataset if (22 < l) & (l <= 33)]))
-        print('  # of 3  :', len([l for _, l in self.__dataset if (33 < l) & (l <= 44)]))
         print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+        
+    def __getitem__(self, i):
+        return tuple(d[i] for d in self.datasets)
 
-        '''self.paths = []
-        for subject in subjects:
-            print(subject)
-            path = []
-            path += list((root / subject).iterdir())
-            if(subject == "57-10" or subject == "57-11"):
-                self.paths += random.sample(path,4000)
-            elif(subject == "38-4" or subject == "38-5"):
-                self.paths += random.sample(path,len(path))
-            elif(len(path) < 2000):
-                self.paths += random.sample(path,len(path))
-            else:
-                self.paths+= random.sample(path,2000)
-            self.paths += list((root / subject).iterdir())'''
-        #print(self.paths[0])
-        print(len(self.__dataset))
     def __len__(self):
-        return len(self.__dataset)
-    def __getitem__(self, item):
-        """
-        :param item:    Index of item
-        :return:        Return tuple of (image, label)
-                        Label is always "10" <= MetricLearning
-        """
-    # img = self.data[item, :, :, :].view(3, 32, 32)
-        path, label = self.__dataset[item]
-        img = Image.open(path).convert('RGB')
-        img = self.transform(img)
-        #img = torchvision.transforms.functional.to_tensor(img)
+        return min(len(d) for d in self.datasets)
 
-        # s0_st34.229508200000005_e0_et34.229508200000005_00000442img.png
-        #name = self.paths[item].name                # Filename
-        #label = float(str(name).split('_')[1][2:])  # Survival time
-
-        # Normalize
-        #label /= 90.
-
-        # Tensor
-        #label = torch.tensor(label, dtype=torch.float)
-        return img
+def load_datasets():
+    tumor_transform  = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5,0.5,0.5,), std=(0.5,0.5,0.5,))
+    ])
+    
+    non_tumor_transform  = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5,0.5,0.5,), std=(0.5,0.5,0.5,))
+    ])
+    tumor_trainsets = datasets.ImageFolder(root = '',transform=tumor_transform)
+    non_tumor_trainsets = datasets.ImageFolder(root = '',transform=non_tumor_transform)
+    Image_datasets = ConcatDataset(tumor_trainsets,non_tumor_trainsets)
+    
+    return 
     # @classmethod
     # def load_list(cls, root):
     #     # 顎骨正常データ取得と整形
