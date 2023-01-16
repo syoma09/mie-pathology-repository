@@ -26,45 +26,75 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 device = 'cuda:1'
 if torch.cuda.is_available():
     cudnn.benchmark = True
-class ConcatDataset(torch.utils.data.Dataset):
-    def __init__(self, *datasets):
-        self.datasets = datasets
+class PatchDataset(torch.utils.data.Dataset):
+    def __init__(self, root, annotations):
+        super(PatchDataset, self).__init__()
+        self.transform = torchvision.transforms.Compose([
+            # torchvision.transforms.Resize((224, 224)),
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+        ])
         self.__dataset = []
         for subject, label in annotations:
             self.__dataset += [
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
         ]
+
         # Random shuffle
         random.shuffle(self.__dataset)
+        # reduce_pathces = True
+        # if reduce_pathces is True:
+        #     data_num = len(self.__dataset) // 5
+        #     self.__dataset = self.__dataset[:data_num]
+
+        # self.__num_class = len(set(label for _, label in self.__dataset))
         self.__num_class = 2
+        # self.__dataset = self.__dataset[:512]
+
         print('PatchDataset')
         print('  # patch :', len(self.__dataset))
         print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
         print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
         print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
-        
-    def __getitem__(self, i):
-        return tuple(d[i] for d in self.datasets)
 
+        '''self.paths = []
+        for subject in subjects:
+            print(subject)
+            path = []
+            path += list((root / subject).iterdir())
+            if(subject == "57-10" or subject == "57-11"):
+                self.paths += random.sample(path,4000)
+            elif(subject == "38-4" or subject == "38-5"):
+                self.paths += random.sample(path,len(path))
+            elif(len(path) < 2000):
+                self.paths += random.sample(path,len(path))
+            else:
+                self.paths+= random.sample(path,2000)
+            self.paths += list((root / subject).iterdir())'''
+        #print(self.paths[0])
+        print(len(self.__dataset))
     def __len__(self):
-        return min(len(d) for d in self.datasets)
-
-def load_datasets():
-    tumor_transform  = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize(mean=(0.5,0.5,0.5,), std=(0.5,0.5,0.5,))
-    ])
+        return len(self.__dataset)
+    def __getitem__(self, root,item):
+        """
+        :param item:    Index of item
+        :return:        Return tuple of (image, label)
+                        Label is always "10" <= MetricLearning
+        """
+    # img = self.data[item, :, :, :].view(3, 32, 32)
+        path, label = self.__dataset[item]
+        img = Image.open(path).convert('RGB')
+        img = self.transform(img)
+        #img = torchvision.transforms.functional.to_tensor(img)
+        if("no" in str(root)):
+            class = 1
+        else:
+            class = 0
+        # Tensor
+        label = torch.tensor(label, dtype=torch.float)
+        return img, class
     
-    non_tumor_transform  = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize(mean=(0.5,0.5,0.5,), std=(0.5,0.5,0.5,))
-    ])
-    tumor_trainsets = datasets.ImageFolder(root = '',transform=tumor_transform)
-    non_tumor_trainsets = datasets.ImageFolder(root = '',transform=non_tumor_transform)
-    Image_datasets = ConcatDataset(tumor_trainsets,non_tumor_trainsets)
-    
-    return 
     # @classmethod
     # def load_list(cls, root):
     #     # 顎骨正常データ取得と整形
@@ -203,14 +233,13 @@ def main():
     #
     # print("==PatchDataset")
     # return
-
     # データ読み込み
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
+        ConcatDataset(PatchDataset(dataset_root, annotation['train']), PatchDataset(, annotation['train'])),batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
+        ConcatDataset(PatchDataset(dataset_root, annotation['valid']), PatchDataset(, annotation['valid']))batch_size=batch_size,
         num_workers=num_workers
     )
     '''iterator = iter(train_loader)
@@ -237,8 +266,8 @@ def main():
     # criterion = nn.CrossEntropyLoss()
     #criterion = nn.BCELoss()
 
-    criterion = nn.MSELoss()
-    tensorboard = SummaryWriter(log_dir='./logss')
+    criterion = nn.binary_cross_entropy_with_logits
+    tensorboard = SummaryWriter(log_dir='./logs_classification')
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
@@ -248,14 +277,14 @@ def main():
         # Switch to training mode
         net.train()
         train_loss=0.
-        for batch, (x) in enumerate(train_loader):
+        for batch, (x,class) in enumerate(train_loader):
             optimizer.zero_grad()
             x = x.to(device)
             y_pred = net(x)   # Forward
             #print(y_pred)
             #print(y_pred)
             #print("yp:", y_pred)
-            loss = criterion(y_pred,x)
+            loss = criterion(y_pred,class)
             # Backward propagation
             loss.backward()
             optimizer.step()    # Update parameters
@@ -286,10 +315,10 @@ def main():
         # Calculate validation metrics
         with torch.no_grad():
             valid_loss=0.
-            for batch, (x) in enumerate(valid_loader):
+            for batch, (x,class) in enumerate(valid_loader):
                 x = x.to(device)
                 y_pred = net(x)  # Prediction
-                loss = criterion(y_pred,x)
+                loss = criterion(y_pred,class)
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
