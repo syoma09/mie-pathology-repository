@@ -5,7 +5,9 @@ venv10/
 .idea/
 logs/
 pngfile/
+events.out.tfevents.*
 
 *.jpg
 graph/*.jpg
 *.png
+*.pdf
