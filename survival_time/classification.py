@@ -48,8 +48,10 @@ class PatchDataset(torch.utils.data.Dataset):
         else:
             self.__dataset += random.sample(self.paths,flag)
         #self.__dataset += random.sample(self.paths,len(self.paths))
+        ]
 
         # Random shuffle
+        random.shuffle(self.__dataset)
         random.shuffle(self.__dataset)
         # reduce_pathces = True
         # if reduce_pathces is True:
@@ -58,6 +60,15 @@ class PatchDataset(torch.utils.data.Dataset):
 
         # self.__num_class = len(set(label for _, label in self.__dataset))
         
+        self.__num_class = 2
+        # self.__dataset = self.__dataset[:512]
+
+        print('PatchDataset')
+        print('  # patch :', len(self.__dataset))
+        print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
+        print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
+        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+
         '''self.paths = []
         for subject in subjects:
             print(subject)
@@ -79,6 +90,7 @@ class PatchDataset(torch.utils.data.Dataset):
         return len(self.__dataset)
     
     def __getitem__(self, item):
+    def __getitem__(self, root,item):
         """
         :param item:    Index of item
         :return:        Return tuple of (image, label)
@@ -102,9 +114,16 @@ class PatchDataset(torch.utils.data.Dataset):
         print('  # of 0  :', len([if(class == 0)]))
         print('  # of 1  :', len([if(class == 1)]))
         print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))"""
+        if("no" in str(root)):
+            class = 1
+        else:
+            class = 0
         # Tensor
         #true_class = torch.tensor(true_class, dtype=torch.float)
         return img, true_class
+    
+        label = torch.tensor(label, dtype=torch.float)
+        return img, class
     
     # @classmethod
     # def load_list(cls, root):
@@ -275,10 +294,12 @@ def main():
     valid_dataset.append(PatchDataset(dataset_root_not, annotation['valid'],flag))
     train_loader = torch.utils.data.DataLoader(
         torch.utils.data.ConcatDataset(train_dataset),batch_size=batch_size, shuffle=True,
+        ConcatDataset(PatchDataset(dataset_root, annotation['train']), PatchDataset(, annotation['train'])),batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
         torch.utils.data.ConcatDataset(valid_dataset),batch_size=batch_size,
+        ConcatDataset(PatchDataset(dataset_root, annotation['valid']), PatchDataset(, annotation['valid']))batch_size=batch_size,
         num_workers=num_workers
     )
     print("train_loader:",len(train_loader))
@@ -313,6 +334,8 @@ def main():
 
     criterion = nn.BCEWithLogitsLoss()
     tensorboard = SummaryWriter(log_dir='./logs_classification')
+    criterion = nn.binary_cross_entropy_with_logits
+    tensorboard = SummaryWriter(log_dir='./logs_classification')
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
@@ -320,6 +343,35 @@ def main():
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
 
         # Initialize metric values on epoch
+        # Switch to training mode
+        net.train()
+        train_loss=0.
+        for batch, (x,class) in enumerate(train_loader):
+            optimizer.zero_grad()
+            x = x.to(device)
+            y_pred = net(x)   # Forward
+            #print(y_pred)
+            #print(y_pred)
+            #print("yp:", y_pred)
+            loss = criterion(y_pred,class)
+            # Backward propagation
+            loss.backward()
+            optimizer.step()    # Update parameters
+            # Logging
+            train_loss += loss.item() / len(train_loader)
+            print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(
+                batch, len(train_loader),
+                ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
+                loss.item()
+            ), end="")
+        print("train_loss",train_loss)
+        print('')
+        print('    Saving model...')
+        torch.save(net.state_dict(), log_root / f"{model_name}{epoch:05}.pth")
+        # Switch to evaluation mode
+        net.eval()
+        # On training data
+        # Initialize validation metric values
         metrics = {
             'train': {
                 'loss': 0.,
@@ -363,6 +415,15 @@ def main():
         # Calculate validation metrics
         with torch.no_grad():
             for i, (x, y_true) in enumerate(valid_loader):
+            valid_loss=0.
+            for batch, (x,class) in enumerate(valid_loader):
+                x = x.to(device)
+                y_pred = net(x)  # Prediction
+                loss = criterion(y_pred,class)
+                # Logging
+                metrics['valid']['loss'] += loss.item() / len(valid_loader)
+                # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
+            """for x, y_true in train_loader:
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
 
