@@ -3,10 +3,11 @@ import datetime
 from pathlib import Path
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.utils.data
 import torchvision
 import math
-import numpy
+import numpy as np
 import random
 import pandas as pd
 import torch_optimizer as optim
@@ -20,23 +21,25 @@ from scipy.special import softmax
 from cnn.metrics import ConfusionMatrix
 from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
-
+from GMM import MDN, mdn_loss
+import pytorch_ssim
 
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:0'
+device = 'cuda:1'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
 
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, annotations, flag):
+    #def __init__(self, root, annotations):
         super(PatchDataset, self).__init__()
         self.transform = torchvision.transforms.Compose([
             #torchvision.transforms.Resize((299, 299)),
             torchvision.transforms.ToTensor(),
-            #torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
         self.__dataset = []
         self.paths = []
@@ -45,12 +48,12 @@ class PatchDataset(torch.utils.data.Dataset):
                 path  # Same label for one subject
                 for path in (root / subject).iterdir()
             ]
-        if (flag == 0):
+        """if (flag == 0):
             self.__dataset += random.sample(self.paths, len(self.paths))
             #self.__dataset += random.sample(self.paths,1000)
         else:
-            self.__dataset += random.sample(self.paths, flag)
-        #self.__dataset += random.sample(self.paths,len(self.paths))
+            self.__dataset += random.sample(self.paths, flag)"""
+        self.__dataset += random.sample(self.paths,len(self.paths))
 
         # Random shuffle
         random.shuffle(self.__dataset)
@@ -141,9 +144,8 @@ class PatchDataset(torch.utils.data.Dataset):
 class Encoder(nn.Module):
     def __init__(self, z_dim):
         super().__init__()
-        net = torchvision.models.resnet18(pretrained=False)
-        newnet = torch.nn.Sequential(*(list(net.children())[:-1]))
-        self.enc = newnet
+        net = torchvision.models.resnet18(weights=None)
+        self.enc = torch.nn.Sequential(*(list(net.children())[:-1]))
         self.enc_ave = nn.Linear(512, z_dim)  # average
         self.enc_dev = nn.Linear(512, z_dim)  # log(sigma^2)
         self.relu = nn.ReLU()
@@ -174,8 +176,8 @@ class Decoder(nn.Module):
         # Gの最終出力
         self.up0 = nn.Sequential(
             self.__decoder_block(64, 3, use_norm=False),
-            nn.Sigmoid()
-            #nn.Tanh()
+            #nn.Sigmoid()
+            nn.Tanh()
         )
 
     def __decoder_block(self, input, output, use_norm=True, use_dropout=False):
@@ -205,21 +207,22 @@ class Decoder(nn.Module):
         y2 = self.up2(y3)
         y1 = self.up1(y2)
         y0 = self.up0(y1)
-        y0 = torch.flatten(y0,1)
+        #y0 = torch.flatten(y0,1)
         return y0
-
 
 class VAE(nn.Module):
     def __init__(self, z_dim):
         super().__init__()
         self.encoder = Encoder(z_dim)
         self.decoder = Decoder(z_dim)
+        
 
     def forward(self, x):
         z, ave, log_dev = self.encoder(x)
+        
         x = self.decoder(z)
-        return x, z, ave, log_dev
-        #return x
+        #return x, z, ave, log_dev
+        return z, x     # vector, output_image
 
     def num_flat_features(self, x):
         size = x.size()[1:]  # all dimensions except the batch dimension
@@ -233,6 +236,7 @@ class ToImg(nn.Module):
     def forward(self, x):
         n, c = x.shape
         return x.reshape(n, 512, 1, 1)
+
 
 
 def create_dataset(
@@ -270,7 +274,7 @@ def create_dataset(
     # Approx., 1 thread use 20GB
     #mem_total = 80
     #n_jobs = int(mem_total / 20)
-    n_jobs = 3
+    n_jobs = 8
     print(f'Process in {n_jobs} threads.')
     # Parallel execution
     Parallel(n_jobs=n_jobs)([
@@ -279,19 +283,6 @@ def create_dataset(
         for path_svs, path_xml, base, size, stride, resize in args
     ])
     # print('args',args)
-
-
-def criterion(predict, target, ave, log_dev):
-#def criterion(predict, target, ave, log_dev):
-    mse_loss = nn.functional.mse_loss(predict, target, reduction='sum')
-    r_loss = mse_loss
-    #kl_loss = -1.0 * weight * torch.sum(1 + log_dev - ave.pow(2) - log_dev.exp())
-    kl_loss = -0.5 * torch.sum(1 + log_dev - ave.pow(2) - log_dev.exp())
-    loss = r_loss + kl_loss
-    #loss = r_loss
-    #print("kl_loss:",kl_loss)
-    return r_loss,kl_loss,loss
-    #return loss
 
 
 def main():
@@ -314,12 +305,11 @@ def main():
     )
 
     # Log, epoch-model output directory
-    log_root = Path("~/data/_out/mie-pathology/").expanduser() / \
-        datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_root.mkdir(parents=True, exist_ok=True)
     annotation_path = Path(
-        "../_data/survival_time_cls/20221206_Auto.csv"
-        # "../_data/survival_time_cls/20220725_aut1.csv"
+        #"../_data/survival_time_cls/20220725_aut1.csv"
+        "../_data/survival_time_cls/20230606_survival.csv"
     ).expanduser()
     # Create dataset if not exists
     if not dataset_root.exists():
@@ -383,6 +373,15 @@ def main():
         torch.utils.data.ConcatDataset(valid_dataset), batch_size=batch_size,
         num_workers=num_workers
     )
+    """# データ読み込み
+    train_loader = torch.utils.data.DataLoader(
+        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
+        num_workers=num_workers
+    )
+    valid_loader = torch.utils.data.DataLoader(
+        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
+        num_workers=num_workers
+    )"""
     print("train_loader:", len(train_loader))
     print("valid_loader:", len(valid_loader))
     '''iterator = iter(train_loader)
@@ -393,12 +392,14 @@ def main():
     '''
     z_dim = 512
     net = VAE(z_dim).to(device)
+    G_estimate= MDN().to(device)
+    torch.autograd.set_detect_anomaly(True) 
     # print(net)
     # net = torch.nn.DataParallel(net).to(device)
     #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
-    optimizer = optim.RAdam(net.parameters(),lr = 0.001)
+    optimizer = torch.optim.RAdam(list(net.parameters())+list(G_estimate.parameters()), lr=0.001, weight_decay=0.0001)
     #optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
-
+    ssim_loss = pytorch_ssim.SSIM() # SSIM Loss
     # criterion = nn.CrossEntropyLoss()
     #criterion = nn.BCELoss()
 
@@ -406,56 +407,56 @@ def main():
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
-    criterion2 = nn.MSELoss()
-    numepoch = 0
-    for epoch in range(epochs):
-        numepoch += 1
-        print(f"Epoch [{epoch:5}/{epochs:5}]:")
-
-        # Initialize metric values on epoch
-        metrics = {
-            'train': {
-                'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
-            }, 'valid': {
-                'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
-            }
+    # Initialize metric values on epoch
+    metrics = {
+        'train': {
+            'loss': 0.,
+            'cmat': ConfusionMatrix(None, None)
+        }, 'valid': {
+            'loss': 0.,
+            'cmat': ConfusionMatrix(None, None)
         }
+    }
 
-        # Switch to training mode
-        net.train()
+    # Switch to training mode
+    net.train()
+    G_estimate.train()
+    train_mse = 0.
+    train_ssim = 0.
+    train_mdn = 0.
+    for batch, (x) in enumerate(train_loader):
+        #input = x.to(device).view(-1, 3*256*256).to(torch.float32)
+        input = x.to(device)
+        # vector,pi, mu, sigma, reconstructions = model(j.cuda())
+        vector, reconstructions = net(input)
+        pi, mu, sigma = G_estimate(vector)
+        
+        #Loss calculations
+        loss1 = F.mse_loss(reconstructions,input,  reduction='mean') #Rec Loss
+        loss2 = -ssim_loss(input, reconstructions) #SSIM loss for structural similarity
+        loss3 = mdn_loss(vector,mu,sigma,pi) #MDN loss for gaussian approximation
+    
+        loss = loss1 + loss2 + loss3 # total loss
+            
+        optimizer.zero_grad()
+        loss.backward()     # Backward propagation
+        optimizer.step()    # Update parameters
 
-        for batch, (x) in enumerate(train_loader):
-            #input = x.to(device).view(-1, 3*256*256).to(torch.float32)
-            input = x.to(device)
-            output, z, ave, log_dev = net(input)   # Forward
-            #print(output.shape)
-            input_true = x.to(device).view(-1, 3*256*256).to(torch.float32)
-            #print(input_true[0])
-            #print(output[0])
-            #print(input_true.shape)
-            # Calculate training loss
-            #r_loss,kl_loss,loss = criterion(output, input, ave,log_dev)
-            #loss = criterion(output, input, ave, log_dev)
-            loss = criterion(output, input_true, ave, log_dev)
-            #loss = criterion2(input,output)
-            optimizer.zero_grad()
-            loss.backward()     # Backward propagation
-            optimizer.step()    # Update parameters
-
-            # Logging
-            metrics['train']['loss'] += loss.item() / len(train_loader)
-            # metrics['train']['cmat'] += ConfusionMatrix(
-            #    y_pred.cpu(), y_true.cpu())
-            # Screen output
-            #print("\r  Batch({:6}/{:6})[{}]: loss={:.4} r_loss={:4} kl_loss={:4}".format(
-            print("\r  Batch({:6}/{:6})[{}]: loss={:.4}".format(    
-                batch, len(train_loader),
-                ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
-                #loss.item(),r_loss,kl_loss
-                loss.item()
-            ), end="")
+        # Logging
+        metrics['train']['loss'] += loss.item() / len(train_loader)
+        train_mse += loss1.item() / len(train_loader)
+        train_ssim += loss2.item() / len(train_loader)
+        train_mdn += loss3.item() / len(train_loader)
+        # metrics['train']['cmat'] += ConfusionMatrix(
+        #    y_pred.cpu(), y_true.cpu())
+        # Screen output
+        print("\r  Batch({:6}/{:6})[{}]: loss={:.4} r_loss={:4} kl_loss={:4}".format(
+        #print("\r  Batch({:6}/{:6})[{}]: loss={:.4}".format(    
+            batch, len(train_loader),
+            ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
+            loss.item(),r_loss,kl_loss
+            #loss.item()
+        ), end="")
 
         print('')
         print('  Saving model...')
@@ -463,30 +464,36 @@ def main():
 
         # Switch to evaluation mode
         net.eval()
-
+        G_estimate.eval()
         # Calculate validation metrics
         with torch.no_grad():
-            for i, (x) in enumerate(valid_loader):
+            valid_mse = 0.
+            valid_ssim = 0.
+            valid_mdn = 0.
+            for batch, (x) in enumerate(valid_loader):
                 input = x.to(device)
-                output, z, ave, log_dev = net(input)   # Forward
-                #print("inp:",input)
-                #print("out:",output)
-                input_true = x.to(device).view(-1, 3*256*256).to(torch.float32)
-                # Calculate training loss
-                #r_loss,kl_loss,loss = criterion(output, input, ave, log_dev,epoch)
-                #loss = criterion(output, input, ave, log_dev)
-                loss = criterion(output, input_true, ave, log_dev)
-                #loss = criterion2(input,output)
-                # print(loss.item())
+                # vector,pi, mu, sigma, reconstructions = model(j.cuda())
+                vector, reconstructions = net(input)
+                pi, mu, sigma = G_estimate(vector)
+        
+                #Loss calculations
+                loss1 = F.mse_loss(reconstructions, input, reduction='mean') #Rec Loss
+                loss2 = -ssim_loss(input, reconstructions) #SSIM loss for structural similarity
+                loss3 = mdn_loss(vector,mu,sigma,pi) #MDN loss for gaussian approximation
+    
+                loss = loss1 + loss2 + loss3 # total loss
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
+                valid_mse += loss1.item() / len(valid_loader)
+                valid_ssim += loss2.item() / len(valid_loader)
+                valid_mdn += loss3.item() / len(valid_loader)
                 #metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
                 
-                #print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4} r_loss={:4} kl_loss={:4}".format(
-                print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4}".format(
+                print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4} loss1={:4} loss2={:4} loss3={:4}".format(
+                #print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4}".format(
                     i, len(valid_loader),
-                    ('=' * (30 * i // len(valid_loader)) + " " * 30)[:30],
-                    #loss.item(),r_loss,kl_loss
-                    loss.item()
+                    ('=' * (30 * batch // len(valid_loader)) + " " * 30)[:30],
+                    loss.item(),loss1,loss2,loss3
+                    #loss.item()
                 ), end="")
 
         # Console write
@@ -507,14 +514,14 @@ def main():
         #print("        Matrix:")
         # print(metrics['valid']['cmat'])
         # Write tensorboard
-        for tv in ['train', 'valid']:
-            # Loss
-            tensorboard.add_scalar(f"{tv}_loss", metrics[tv]['loss'], numepoch)
-            # For ConfusionMatrix
-            """for m_name in ['f1', "f1inv", "npv", "tpr", "precision", "recall", "tn", "tp", "fn", "fp"]:
-                tensorboard.add_scalar(f"{tv}_{m_name}", getattr(
-                    metrics[tv]['cmat'], m_name), epoch)"""
-
-
+        tensorboard.add_scalar('train_loss', metrics['train']['loss'], epoch)
+        tensorboard.add_scalar('train_MSE', train_mse, epoch)
+        tensorboard.add_scalar('train_SSIM', train_kld, epoch)
+        tensorboard.add_scalar('train_MDN', train_kld, epoch)
+        tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
+        #tensorboard.add_scalar('train_MAE', train_loss_mae, epoch)
+        tensorboard.add_scalar('valid_MSE', valid_mse, epoch)
+        tensorboard.add_scalar('train_SSIM', train_kld, epoch)
+        tensorboard.add_scalar('train_MDN', train_kld, epoch)
 if __name__ == '__main__':
     main()
