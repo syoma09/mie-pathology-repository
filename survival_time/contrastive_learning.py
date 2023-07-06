@@ -9,6 +9,9 @@ import math
 import numpy
 import random
 import pandas as pd
+import pytorch_lightning as pl
+import torch.nn.functional as F
+import torchvision.transforms as T
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 from PIL import Image
@@ -19,27 +22,139 @@ from scipy.special import softmax
 from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
 
-
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:1'
+device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
+
+def device_as(t1, t2):
+    """
+    Moves t1 to the device of t2
+    """
+    return t1.to(t2.device)
+
+class ContrastiveLoss(nn.Module):
+    """
+    Vanilla Contrastive loss, also called InfoNceLoss as in SimCLR paper
+    """
+    def __init__(self,  temperature=0.5):
+        super().__init__()
+        #self.batch_size = batch_size
+        self.temperature = temperature
+        #self.mask = (~torch.eye(batch_size * 2, batch_size * 2, dtype=bool)).float()
+
+    def calc_similarity_batch(self, a, b):
+        representations = torch.cat([a, b], dim=0)
+        return F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=2)
+
+    def forward(self, proj_1, proj_2):
+        """
+        proj_1 and proj_2 are batched embeddings [batch, embedding_dim]
+        where corresponding indices are pairs
+        z_i, z_j in the SimCLR paper
+        """
+        batch_size = proj_1.shape[0]
+        mask = (~torch.eye(batch_size * 2, batch_size * 2, dtype=bool)).float()
+        z_i = F.normalize(proj_1, p=2, dim=1)
+        z_j = F.normalize(proj_2, p=2, dim=1)
+
+        similarity_matrix = self.calc_similarity_batch(z_i, z_j)
+
+        sim_ij = torch.diag(similarity_matrix, batch_size)
+        sim_ji = torch.diag(similarity_matrix, -batch_size)
+
+        positives = torch.cat([sim_ij, sim_ji], dim=0)
+
+        nominator = torch.exp(positives / self.temperature)
+
+        denominator = device_as(mask, similarity_matrix) * torch.exp(similarity_matrix / self.temperature)
+
+        all_losses = -torch.log(nominator / torch.sum(denominator, dim=1))
+        loss = torch.sum(all_losses) / (2 * batch_size)
+        return loss
+
+def default(val, def_val):
+    return def_val if val is None else val
+
+class AddProjection(nn.Module):
+    def __init__(self, config, model=None, mlp_dim=512):
+        super(AddProjection, self).__init__()
+        embedding_size = config.embedding_size
+        self.backbone = default(model, torchvision.models.resnet18(pretrained=False, num_classes=config.embedding_size))
+        mlp_dim = default(mlp_dim, self.backbone.fc.in_features)
+        print('Dim MLP input:',mlp_dim)
+        self.backbone.fc = nn.Identity()
+
+        # add mlp projection head
+        self.projection = nn.Sequential(
+            nn.Linear(in_features=mlp_dim, out_features=mlp_dim),
+            #nn.BatchNorm1d(mlp_dim),
+            nn.ReLU(),
+            nn.Linear(in_features=mlp_dim, out_features=embedding_size),
+            #nn.BatchNorm1d(embedding_size),
+        )
+
+    def forward(self, x, return_embedding=False):
+        embedding = self.backbone(x)
+        if return_embedding:
+            return embedding
+        return self.projection(embedding)
+
+
+
+def define_param_groups(model, weight_decay, optimizer_name):
+    def exclude_from_wd_and_adaptation(name):
+        if 'bn' in name:
+            return True
+        if optimizer_name == 'lars' and 'bias' in name:
+            return True
+
+    param_groups = [
+        {
+            'params': [p for name, p in model.named_parameters() if not exclude_from_wd_and_adaptation(name)],
+            'weight_decay': weight_decay,
+            'layer_adaptation': True,
+        },
+        {
+            'params': [p for name, p in model.named_parameters() if exclude_from_wd_and_adaptation(name)],
+            'weight_decay': 0.,
+            'layer_adaptation': False,
+        },
+    ]
+    return param_groups
+
+
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, annotations):
         super(PatchDataset, self).__init__()
-        self.transform = torchvision.transforms.Compose([
-            # torchvision.transforms.Resize((224, 224)),
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
-        ])
+        s = 1
+        img_size = 256
+        color_jitter = T.ColorJitter(
+            0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s
+        )
+        # 10% of the image
+        blur = T.GaussianBlur((3, 3), (0.1, 2.0))
+        self.train_transform = torchvision.transforms.Compose(
+            [
+            T.RandomResizedCrop(size=img_size),
+            T.RandomHorizontalFlip(p=0.5),  # with 0.5 probability
+            T.RandomApply([color_jitter], p=0.8),
+            T.RandomApply([blur], p=0.5),
+            T.RandomGrayscale(p=0.2),
+            # imagenet stats
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ]
+        )
         
-        self.transform_aug = torchvision.transforms.Compose([
-            torchvision.transforms.RandomCrop(size=(256, 256)),
-            torchvision.transforms.RandomHorizontalFlip(),
-            torchvision.transforms.ToTensor()
-        ])
+        self.test_transform = T.Compose(
+            [
+                T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
         
         self.__dataset = []
         for subject in annotations:
@@ -63,116 +178,143 @@ class PatchDataset(torch.utils.data.Dataset):
     # img = self.data[item, :, :, :].view(3, 32, 32)
         path  = self.__dataset[item]
         img = Image.open(path).convert('RGB')
-        img_aug = self.transform_aug(img)
-        img = self.transform(img)
+        #img_aug = self.train_transform(img)
+        #img = self.transform(img)
+        true_class = torch.zeros(2)
         if("not" in str(path)):
-            true_class = 1
+            true_class[0] = 1
         else:
-            true_class = 0
+            true_class[1] = 1
         # Tensor
-        true_class = torch.tensor(true_class, dtype=torch.float)
-        return img, img_aug, true_class
-        
-    
-    # @classmethod
-    # def load_list(cls, root):
-    #     # 顎骨正常データ取得と整形
-    #
-    #     with open(root, "rb") as f:
-    #         output = pickle.load(f)
-    #
-    #     return output
-    #
-    # @classmethod
-    # def load_torch(cls, _list):
-    #     output = torch.cat([_dict["data"].view(1, 3, 32, 32) for _dict in _list],
-    #                        dim=0)
-    #
-    #     return output
-    #
-    # @classmethod
-    # def load_necrosis(cls, root):
-    #     data = cls.load_list(root)
-    #     data = cls.load_torch(data)
-    #
-    #     return data
+        #true_class = torch.tensor(true_class, dtype=torch.float)
+        return self.train_transform(img), self.train_transform(img), true_class
 
-# class WeightedProbLoss(nn.Module):
-#     def __init__(self, classes):
-#         super(WeightedProbLoss, self).__init__()
-#
-#         if isinstance(classes, int):
-#             classes = [i for i in range(classes)]
-#
-#         self.classes = torch.Tensor(classes).to(device)
-#
-#     def forward(self, pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
-#         """
-#
-#         :param pred:    Probabilities of each class
-#         :param true:    1-hot vector
-#         :return:
-#         """
-#
-#         c_pred = torch.sum(torch.mul(pred, self.classes))
-#         c_true = torch.argmax(true)
-
-class Encoder(nn.Module):
-    def __init__(self):
-        super(Encoder, self).__init__()
-        net = torchvision.models.resnet18(pretrained=False)
-        self.enc = torch.nn.Sequential(*(list(net.children())[:-1])) 
-        
-        
-    def forward(self, x):
-        x = self.enc(x)
-        x = torch.flatten(x, 1)
-        return x
-
-class ContrastiveModel(nn.Module):
-    def __init__(self):
-        super(ContrastiveModel, self).__init__()
-        
-        self.encoder = Encoder()
-        
-    def forward(self, x):
-        x = self.encoder(x)
-        return x
-
-class SupervisedContrastiveLoss(nn.Module):
-    def __init__(self, temperature):
-        super(SupervisedContrastiveLoss, self).__init__()
+class SupConLoss(nn.Module):
+    """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
+    It also supports the unsupervised contrastive loss in SimCLR"""
+    def __init__(self, temperature, contrast_mode='all',
+                 base_temperature=0.07):
+        super(SupConLoss, self).__init__()
         self.temperature = temperature
+        self.contrast_mode = contrast_mode
+        self.base_temperature = base_temperature
 
-    def forward(self, embeddings, labels, augmented_embeddings):
-        batch_size = embeddings.size(0)
-        total_batch_size = batch_size * 2
+    def forward(self, features, labels=None, mask=None):
+        """Compute loss for model. If both `labels` and `mask` are None,
+        it degenerates to SimCLR unsupervised loss:
+        https://arxiv.org/pdf/2002.05709.pdf
 
-        # 特徴ベクトル間の類似度行列を計算
-        sim_matrix = torch.matmul(embeddings, embeddings.t())
-        augmented_sim_matrix = torch.matmul(augmented_embeddings, augmented_embeddings.t())
+        Args:
+            features: hidden vector of shape [bsz, n_views, ...].
+            labels: ground truth of shape [bsz].
+            mask: contrastive mask of shape [bsz, bsz], mask_{i,j}=1 if sample j
+                has the same class as sample i. Can be asymmetric.
+        Returns:
+            A loss scalar.
+        """
 
-        # 正解クラスの対数確率を取得
-        mask = labels.unsqueeze(1).eq(labels.unsqueeze(0))
-        positives = torch.cat([sim_matrix[mask], augmented_sim_matrix[mask]])
+        if len(features.shape) < 3:
+            raise ValueError('`features` needs to be [bsz, n_views, ...],'
+                             'at least 3 dimensions are required')
+        if len(features.shape) > 3:
+            features = features.view(features.shape[0], features.shape[1], -1)
 
-        # 正解クラス以外の類似度の合計を計算
-        mask_neg = ~mask
-        negatives = torch.cat([sim_matrix[mask_neg], augmented_sim_matrix[mask_neg]])
+        batch_size = features.shape[0]
+        #print(batch_size)
+        if labels is not None and mask is not None:
+            raise ValueError('Cannot define both `labels` and `mask`')
+        elif labels is None and mask is None:
+            mask = torch.eye(batch_size, dtype=torch.float32).to(device)
+        elif labels is not None:
+            labels = labels.contiguous().view(-1, 1)
 
-        # 全てのクラスの類似度をsoftmaxで正規化
-        sim_matrix = torch.cat([sim_matrix, augmented_sim_matrix], dim=1) / self.temperature
-        sim_matrix = sim_matrix - torch.max(sim_matrix, dim=1, keepdim=True)[0]  # 最大値を引いて数値安定化
-        sim_matrix = torch.exp(sim_matrix)
+            if labels.shape[0] != batch_size:
+                raise ValueError('Num of labels does not match num of features')
+            mask = torch.eq(labels, labels.T).float().to(device)
+        else:
+            mask = mask.float().to(device)
 
-        # 損失を計算して平均を取る
-        negatives_adjusted = negatives.unsqueeze(1).expand(-1, positives.shape[0])
-        #negatives_adjusted = negatives.expand(-1, positives.shape[0])  # tensor2の列をtensor1の列数に拡張
-        loss = -torch.log(positives / (torch.cat(positives,negatives_adjusted))).mean()
-        print(loss.shape)
+        contrast_count = features.shape[1]
+        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
+        if self.contrast_mode == 'one':
+            anchor_feature = features[:, 0]
+            anchor_count = 1
+        elif self.contrast_mode == 'all':
+            anchor_feature = contrast_feature
+            anchor_count = contrast_count
+        else:
+            raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
+
+        # compute logits
+        anchor_dot_contrast = torch.div(
+            torch.matmul(anchor_feature, contrast_feature.T),
+            self.temperature)
+        # for numerical stability
+        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+        logits = anchor_dot_contrast - logits_max.detach()
+        #print(logits)
+
+        # tile mask
+        mask = mask.repeat(anchor_count, contrast_count)
+        # mask-out self-contrast cases
+        logits_mask = torch.scatter(
+            torch.ones_like(mask),
+            1,
+            torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
+            0
+        )
+        mask = mask * logits_mask
+        # compute log_prob
+        exp_logits = torch.exp(logits) * logits_mask
+        #print(exp_logits)
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+        #print(logits.shape)
+        #print(exp_logits.sum(1, keepdim=True).shape)
+        # compute mean of log-likelihood over positive
+        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+        
+
+        # loss
+        loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
+        #print(loss)
+        loss = loss.view(anchor_count, batch_size).mean()
 
         return loss
 
+def info_nce_loss(features):
+        batch_size = features.shape[0]
+        n_views = 1
+        temperature = 0.07
+        labels = torch.cat([torch.arange(batch_size) for _ in range(n_views)], dim=0)
+        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+        labels = labels.to(device)
+
+        # バッチ
+        features = F.normalize(features, dim=1)
+
+        similarity_matrix = torch.matmul(features, features.T)
+        # assert similarity_matrix.shape == (
+        #     self.args.n_views * self.args.batch_size, self.args.n_views * self.args.batch_size)
+        # assert similarity_matrix.shape == labels.shape
+
+        # discard the main diagonal from both: labels and similarities matrix
+        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(device)
+        labels = labels[~mask].view(labels.shape[0], -1)
+
+        similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
+        # assert similarity_matrix.shape == labels.shape
+
+        # select and combine multiple positives
+        positives = similarity_matrix[labels.bool()].view(labels.shape[0], -1)
+
+        # select only the negatives
+        negatives = similarity_matrix[~labels.bool()].view(similarity_matrix.shape[0], -1)
+
+        logits = torch.cat([positives, negatives], dim=1)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).to(device)
+
+        logits = logits / temperature
+        return logits, labels
 
 def num_flat_features(self, x):
     size = x.size()[1:]  # all dimensions except the batch dimension
@@ -232,6 +374,32 @@ def create_dataset(
     ])
     #print('args',args)
 
+# a lazy way to pass the config file
+class Hparams:
+    def __init__(self):
+        self.epochs = 300 # number of training epochs
+        self.seed = 77777 # randomness seed
+        self.cuda = True # use nvidia gpu
+        self.img_size = 256 #image shape
+        self.save = "./saved_models/" # save checkpoint
+        self.load = False # load pretrained checkpoint
+        self.gradient_accumulation_steps = 5 # gradient accumulation steps
+        self.batch_size = 32
+        self.lr = 3e-4 # for ADAm only
+        self.weight_decay = 1e-6
+        self.embedding_size= 128 # papers value is 128
+        self.temperature = 0.5 # 0.1 or 0.5
+        self.checkpoint_path = './SimCLR_ResNet18.ckpt' # replace checkpoint path here
+
+class SimCLR_pl(pl.LightningModule):
+   def __init__(self, config, model=None, feat_dim=512):
+       super().__init__()
+       self.config = config
+       self.model = AddProjection(config, model=model, mlp_dim=feat_dim)
+
+   def forward(self, X):
+       return self.model(X)
+
 def main():
     patch_size = 256,256
     stride = 256,256
@@ -258,6 +426,10 @@ def main():
     # Create dataset if not exists
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
+    
+    if not dataset_root_not.exists():
+        dataset_root_not.mkdir(parents=True, exist_ok=True)
+        
     # Existing subjects are ignored in the function
     """create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
@@ -268,26 +440,12 @@ def main():
     )"""
     # Load annotations
     annotation = load_annotation(annotation_path)
-    # echo $HOME == ~
-    #src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
-    # Write dataset on SSD (/mnt/cache/)
-    #dataset_root = Path("/mnt/cache").expanduser()/ os.environ.get('USER') / 'mie-pathology'
-    if not dataset_root.exists():
-        dataset_root.mkdir(parents=True, exist_ok=True)
     epochs = 10000
-    batch_size = 32     # 64 requires 19 GiB VRAM
+    batch_size = 32     # 64 requires 19 GiB 
     num_workers = os.cpu_count() // 2   # For SMT
-    '''# Load train/valid yaml
-    with open(src / "survival_time.yml", "r") as f:
-        yml = yaml.safe_load(f)'''
-
-    # print("PatchDataset")
-    # d = PatchDataset(root, yml['train'])
-    # d = PatchDataset(root, yml['valid'])
-    # print(len(d))
-    #
-    # print("==PatchDataset")
-    # return
+    train_config = Hparams()
+    net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512).to(device)
+    #transform = Augment(train_config.img_size)
 
     # データ読み込み
     """train_loader = torch.utils.data.DataLoader(
@@ -315,8 +473,6 @@ def main():
         num_workers=num_workers
     )
     
-    net = ContrastiveModel().to(device)
-    print(net)
     # net = torch.nn.DataParallel(net).to(device)
     #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
     optimizer = torch.optim.RAdam(net.parameters(), lr=0.001)
@@ -324,7 +480,9 @@ def main():
     # criterion = nn.CrossEntropyLoss()
     #criterion = nn.BCELoss()
 
-    criterion = SupervisedContrastiveLoss(temperature = 1.0)
+    #criterion = ContrastiveLoss(temperature=0.5)
+    #criterion = SupConLoss(temperature=0.07)
+    criterion = nn.CrossEntropyLoss()
     tensorboard = SummaryWriter(log_dir='./logs_Cont')
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
@@ -335,14 +493,41 @@ def main():
         # Switch to training mode
         net.train()
         train_loss=0.
-        for batch, (img,img_aug,labels) in enumerate(train_loader):
-            optimizer.zero_grad()
-            img, img_aug, labels = img.to(device), img_aug.to(device), labels.to(device)
+        for batch, (x1,x2,labels) in enumerate(train_loader):
+            """
+            #SimCLR
+            x1, x2, labels = x1.to(device), x2.to(device), labels.to(device)
             # 特徴抽出モデルに入力して特徴ベクトルを取得
-            original_embedding = net(img)
-            augmented_embedding = net(img_aug)
-            loss = criterion(original_embedding, labels, augmented_embedding)
+            original_embedding = net(x1)
+            augmented_embedding = net(x2)
+            loss = criterion(original_embedding, augmented_embedding)
+            """
+            """
+            #SupCon
+            images = torch.cat([x1,x2], dim=0)
+            images, labels = images.to(device),labels.to(device)
+            bsz = labels.shape[0]
+            features = net(images)
+            #print(features.shape)
+            f1, f2 = torch.split(features,[bsz,bsz],dim = 0)
+            #print(f1.shape)
+            #print(f2.shape)
+            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+            #print(features.shape)
+            loss = criterion(features, labels)
+            """
+            #nce+ce
+            images = torch.cat([x1,x2], dim=0)
+            images = images.to(device)
+            features = net(images)
+            logits, _ = info_nce_loss(features)
+            # logits, label = self.info_scs_loss(features, label)
+            # nce_lossを使う場合には、ロス関数をクロスエントロピーに
+            # scs_lossを使う場合には、ロス関数をMSEに
+
+            loss = criterion(logits, torch.cat([labels,labels]).to(device))
             # Backward propagation
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()    # Update parameters
             # Logging
@@ -356,6 +541,8 @@ def main():
         print('')
         print('    Saving model...')
         torch.save(net.state_dict(), log_root / f"{model_name}{epoch:05}.pth")
+        
+        
         # Switch to evaluation mode
         net.eval()
         # On training data
@@ -372,12 +559,35 @@ def main():
         # Calculate validation metrics
         with torch.no_grad():
             valid_loss=0.
-            for batch, (img,img_aug,labels) in enumerate(valid_loader):
-                img, img_aug, labels = img.to(device), img_aug.to(device), labels.to(device)
+            for batch, (x1,x2,labels) in enumerate(valid_loader):
+                """
+                #SimCLR
+                x1, x2, labels = x1.to(device), x2.to(device), labels.to(device)
                 # 特徴抽出モデルに入力して特徴ベクトルを取得
-                original_embedding = net(img)
-                augmented_embedding = net(img_aug)
-                loss = criterion(original_embedding, labels, augmented_embedding)
+                original_embedding = net(x1)
+                augmented_embedding = net(x2)
+                loss = criterion(original_embedding, augmented_embedding)
+                """
+                """
+                #SupCon
+                images = torch.cat([x1,x2], dim=0)
+                images, labels = images.to(device),labels.to(device)
+                bsz = labels.shape[0]
+                features = net(images)
+                f1, f2 = torch.split(features,[bsz,bsz],dim = 0)
+                features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+                loss = criterion(features, labels)
+                """
+                #nce+ce
+                images = torch.cat([x1,x2], dim=0)
+                images = images.to(device)
+                features = net(images)
+                logits, _ = info_nce_loss(features)
+                # logits, label = self.info_scs_loss(features, label)
+                # nce_lossを使う場合には、ロス関数をクロスエントロピーに
+                # scs_lossを使う場合には、ロス関数をMSEに
+
+                loss = criterion(logits, torch.cat([labels,labels]).to(device))
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
