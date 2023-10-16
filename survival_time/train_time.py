@@ -22,34 +22,69 @@ from PIL import ImageFile
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from collections import OrderedDict
-from function import load_annotation, get_dataset_root_path
+from lifelines.utils import concordance_index
+from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
 from AgeEstimation.mean_variance_loss import MeanVarianceLoss
 from VAE import VAE
 from Unet import Generator
 from contrastive_learning import Hparams,SimCLR_pl,AddProjection
+from labels import estimate_value, c_soft, hard_to_soft_labels
+from sklearn.manifold import TSNE
 
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:0'
+device = 'cuda:1'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 class PatchDataset(torch.utils.data.Dataset):
-    def __init__(self, root, annotations):
+    def __init__(self, root, annotations, flag):
         super(PatchDataset, self).__init__()
         self.transform = torchvision.transforms.Compose([
-            # torchvision.transforms.Resize((224, 224)),
+            torchvision.transforms.Resize((224, 224)),
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+            torchvision.transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            )
+            #torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
         ])
         self.__dataset = []
+        paths = []
         for subject, label in annotations:
-            self.__dataset += [
+            paths += [
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
         ]
-
+        if(flag == 1):
+            paths = []
+            for subject, label in annotations:
+                paths += [
+                    (path, label)   # Same label for one subject
+                    for path in (root / subject).iterdir()
+                ] 
+            min = len(paths)
+            for i in range(3):
+                if(min > len([l for _, l in paths if (i * 11 < l) & (l <= (i+1) * 11)])):
+                    min = len([l for _, l in paths if (i * 11 < l) & (l <= (i+1) * 11)])
+            
+            print(min)
+            class_dataset_0 = [item for item in paths if item[1] <= 11]
+            class_dataset_1 = [item for item in paths if 11 < item[1] and item[1] <= 22]
+            class_dataset_2 = [item for item in paths if 22 < item[1] and item[1] <= 33]
+            class_dataset_3 = [item for item in paths if 33 < item[1] and item[1] <= 44]
+            
+            self.__dataset += random.sample(class_dataset_0,min)
+            self.__dataset += random.sample(class_dataset_1,min)    
+            self.__dataset += random.sample(class_dataset_2,min)
+            self.__dataset += random.sample(class_dataset_3,min)
+        else:
+            for subject, label in annotations:
+                self.__dataset += [
+                    (path, label)   # Same label for one subject
+                    for path in (root / subject).iterdir()
+            ]
+            
         # Random shuffle
         random.shuffle(self.__dataset)
         # reduce_pathces = True
@@ -68,6 +103,9 @@ class PatchDataset(torch.utils.data.Dataset):
         print('  # of 2  :', len([l for _, l in self.__dataset if (22 < l) & (l <= 33)]))
         print('  # of 3  :', len([l for _, l in self.__dataset if (33 < l) & (l <= 44)]))
         print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+
+
+
 
         '''self.paths = []
         for subject in subjects:
@@ -175,7 +213,8 @@ class PatchDataset(torch.utils.data.Dataset):
             label_class = 33'''
         # Tensor
         label = torch.tensor(label, dtype=torch.float)
-        return img, label, label_class
+        soft_labels = c_soft(label,4)
+        return img, soft_labels, label, label_class
 
     # @classmethod
     # def load_list(cls, root):
@@ -266,51 +305,32 @@ class PatchDataset(torch.utils.data.Dataset):
             
     return loss"""
 
+# ResNet + TransformerEncoder
+class ResTrans(torch.nn.Module):
+    def __init__(self,ext ,est):
+        super().__init__()
+        self.ext = ext
+        self.est = est
+    def forward(self, x):
+        x = self.ext(x)
+        x = TSNE(n_components=32,perplexity = 5,random_state=0,method='exact').fit_transform(x.cpu().detach().numpy())
+        x = torch.tensor(x).to(device)
+        x = self.est(x)
+        #print(x.shape)
+        return x
 
-def estimate_value(y_pred):
-    N = 4 #Number of classes
-    a = torch.arange(6,48,12, dtype=torch.float32).to(device)
-    m = nn.Softmax(dim = 1)
-    output = m(y_pred)
-    pred = (output * a).sum(1, keepdim=True).cpu().data.numpy()
-    return pred
-
-def OnehotEncording(y_class):
-    #One-hot encording
-    N = 4
-    yt_one = np.zeros((len(y_class),N))
-    for i in range (len(y_class)):
-        yt_one[i][int(y_class[i])] = 1
-    return yt_one
-
-"""def softlabel_t(labels_hard,yt_one):
-    # transform soft label
-    num_classes = 4
-    mean = torch.tensor([0,1,2,3])
-    std = torch.ones(num_classes) #標準偏差
-    mean,std = mean.to(device),std.to(device)
-    normal_dist = dist.Normal(mean, std)  # 正規分布の作成
-    # 各次元ごとにcdfの計算を適用
-    soft_labels = torch.stack([normal_dist.cdf(labels_hard[i].float()) for i in range(labels_hard.shape[0])], dim=0)
-    soft_labels /= soft_labels.sum(dim=1, keepdim=True)
-    print(labels_hard[0])
-    print(soft_labels[0])
-    return soft_labels"""
-
-def softlabel_t(labels_hard):
-    num_classes = 4
-    mean = torch.tensor([0, 1, 2, 3], dtype=torch.float32)  # 平均値を対称に設定
-    std = torch.ones(num_classes, dtype=torch.float32)  # 標準偏差
-    mean,std = mean.to(device),std.to(device)
+def create_model():
+    ext = torchvision.models.resnet18(pretrained = True)
+    ext.fc = nn.Sequential( 
+        nn.Linear(512, 128, bias=True),
+    )
     
-    # ソフトラベルを計算
-    normal_dist = torch.distributions.Normal(mean, std)
-    soft_labels = torch.exp(normal_dist.log_prob(labels_hard.float()))
-    soft_labels /= soft_labels.sum(dim=1, keepdim=True)
-    print(labels_hard[0])
-    print(soft_labels[0])
-    return soft_labels
- 
+    encoder_layer = nn.TransformerEncoderLayer(d_model=32, nhead=8)
+    est = nn.TransformerEncoder(encoder_layer, num_layers=6)
+    net = ResTrans(ext,est)
+    
+    return net
+
 def create_dataset(
         src: Path, dst: Path,
         annotation: Path,
@@ -364,7 +384,12 @@ def main():
         stride=stride,
         index = index
     )
-    
+
+    dataset_root_not = get_dataset_root_not_path(
+        patch_size=patch_size,
+        stride=stride,
+        index = index
+    )
     
     # Log, epoch-model output directory
     road_root = Path("~/data/_out/mie-pathology/").expanduser()
@@ -378,18 +403,26 @@ def main():
     """if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)"""
     # Existing subjects are ignored in the function
-    create_dataset(
+    """create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
         dst=dataset_root,
         annotation=annotation_path,
         size=patch_size, stride=stride,
         index=index, region=None
-    )
+    )"""
+    
+    """create_dataset(
+        src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
+        dst=dataset_root_not,
+        annotation=annotation_path,
+        size=patch_size, stride=stride,
+        index=index, region=None
+    )"""
     # Load annotations
     annotation = load_annotation(annotation_path)
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
-    epochs = 10000
+    epochs = 1000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 4   # For SMT
     # Load train/valid yaml
@@ -405,14 +438,36 @@ def main():
     # return
 
     # データ読み込み
+    flag = 0
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
+        PatchDataset(dataset_root, annotation['train'],flag), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid']), batch_size=batch_size,
+        PatchDataset(dataset_root, annotation['valid'],flag), batch_size=batch_size,
         num_workers=num_workers
     )
+    """
+    train_dataset = []
+    valid_dataset = []
+    flag = 0
+    train_dataset.append(PatchDataset(dataset_root, annotation['train'],flag))
+    flag = 1
+    train_dataset.append(PatchDataset(dataset_root_not, annotation['train'],flag))
+    flag = 0
+    valid_dataset.append(PatchDataset(dataset_root, annotation['valid'],flag))
+    flag =1
+    valid_dataset.append(PatchDataset(dataset_root_not, annotation['valid'],flag))
+    
+    train_loader = torch.utils.data.DataLoader(
+        torch.utils.data.ConcatDataset(train_dataset), batch_size=batch_size, shuffle=True,
+        num_workers=num_workers
+    )
+    valid_loader = torch.utils.data.DataLoader(
+        torch.utils.data.ConcatDataset(valid_dataset), batch_size=batch_size,
+        num_workers=num_workers
+    )
+    """
     '''iterator = iter(train_loader)
     x, _ = next(iterator)
     imshow(x)'''
@@ -429,42 +484,44 @@ def main():
     #net = UNet_2D().to(device)
     #net = create_model()
     
-    train_config = Hparams()
-    net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
-    #net = AddProjection(train_config, model=torchvision.models.resnet18(pretrained=False), mlp_dim=512)
-    #net = torchvision.models.resnet18(pretrained=False)
-    #net = torchvision.models.vgg16(pretrained = True)
-    """num_features = net.fc.in_features
-    print(num_features)
-    net.fc = nn.Sequential(
-        nn.Linear(num_features, 512, bias=True),
-        #nn.ReLU(),
+    
+    
+    #train_config = Hparams()
+    #net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
+    
+    """net.model.projection = nn.Sequential(
+    #net.fc = nn.Sequential( 
+    #net.dec = nn.Sequential(
         nn.Linear(512, 512, bias=True),
-        #nn.ReLU(),
-        nn.Linear(512, 2, bias=True),
-        #nn.Softmax(dim=1)
-        #nn.Sigmoid()
+        nn.BatchNorm1d(512),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(512, 1, bias=True),
     )"""
-    #print(net)
-    net.load_state_dict(torch.load(
+    
+    """net.load_state_dict(torch.load(
         #road_root / "20221220_184624" /'', map_location=device) #p=1024,s=512,b=32
         #road_root / "20230309_182905" /'model00520.pth', map_location=device) #f1 best
         #road_root / "20230530_205222" /'20230530_205224model00020.pth', map_location=device) #U-net 
         #road_root / "20230516_162742" /'model00020.pth', map_location=device) #U-net 
         #road_root / "20230712_131831" /'20230712_131837model00140.pth', map_location=device)
-        road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device)
-                        
-    )
+        #road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive
+        road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
+        #road_root / "20230725_173524" /'20230725_190953model00092.pth', map_location=device)
+        #road_root / "20230817_165147" /'model00152.pth', map_location=device) #Cox 
+        #road_root / "20230901_175143" /'model00482.pth', map_location=device) #Cox
+        #road_root / "20230907_132454" /'model00014.pth', map_location=device) #Cox                                 
+    )"""
+    
+    
     #num_features = net.fc.in_features
     # print(num_features)  # 512
     #net.dec = nn.ReLU()
     #print(net.model.projection)
-    net.model.projection = nn.Sequential(
-    #net.fc = nn.Sequential( 
+    """
+    #net.model.projection = nn.Sequential(
+    net.fc = nn.Sequential( 
     #net.dec = nn.Sequential(
-        nn.BatchNorm1d(512),
-        nn.ReLU(),
-        nn.Dropout(0.5),
         nn.Linear(512, 512, bias=True),
         nn.BatchNorm1d(512),
         nn.ReLU(),
@@ -474,7 +531,8 @@ def main():
         nn.ReLU(),
         nn.Dropout(0.5),
         nn.Linear(512, 4, bias=True),
-    )
+    )"""
+    
     """net = nn.Sequential(
         net,
         nn.Sequential(
@@ -499,14 +557,42 @@ def main():
         #nn.Softmax(dim=1)
         # nn.Sigmoid()
     )"""
-    for param in net.model.parameters():
+    """
+    #for param in net.model.parameters():
+    for param in net.parameters():
         param.requires_grad = False
     #print(net.model.backbone.conv1.bias)
-    last_layer = net.model.projection
+    #last_layer = net.model.projection
+    last_layer = net.dec
     #last_layer = list(net.children())[-1]
     print(f'except last layer: {last_layer}')
     for param in last_layer.parameters():
         param.requires_grad = True
+    """
+    # ResNet
+    """
+    net = torchvision.models.resnet18(pretrained = True)
+    net.fc = nn.Sequential( 
+        nn.Linear(512, 512, bias=True),
+        nn.BatchNorm1d(512),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(512, 512, bias=True),
+        nn.BatchNorm1d(512),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(512, 4, bias=True),
+    )"""
+
+    
+    
+    #net = net.to(device)
+    net = create_model().to(device)
+    num_features = 32
+    net = nn.Sequential(
+    net,
+    nn.Linear(num_features,4,bias = True)
+    )
     net = net.to(device)
     print(net)
     # net = torch.nn.DataParallel(net).to(device)
@@ -517,9 +603,9 @@ def main():
     # criterion = nn.BCELoss()
 
     #criterion = nn.MSELoss()
-    LAMBDA_1 = 0.5
+    LAMBDA_1 = 0.2
     #LAMBDA_1 = 1.
-    LAMBDA_2 = 0.25
+    LAMBDA_2 = 0.05
     #LAMBDA_2 = 1.
     START_AGE = 0
     END_AGE = 3
@@ -527,13 +613,12 @@ def main():
     
     
     criterion1 = MeanVarianceLoss(LAMBDA_1, LAMBDA_2, START_AGE, END_AGE)
-    criterion2 = nn.CrossEntropyLoss() #hard label
-    #criterion2 = nn.KLDivLoss(reduction='batchmean') # soft label
+    #criterion2 = nn.CrossEntropyLoss() #hard label
+    criterion2 = nn.KLDivLoss(reduction='batchmean') # soft label
     tensorboard = SummaryWriter(log_dir='./logs',filename_suffix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
-
     #print(net)
     
     for epoch in range(epochs):
@@ -545,29 +630,34 @@ def main():
         train_variance_loss = 0.
         train_softmax_loss = 0.
         train_mae = 0.
+        train_index=0.
         #train_loss_mae = 0.
-        for batch, (x, y_true, y_class) in enumerate(train_loader):
+        for batch, (x, soft_labels, y_true,y_class) in enumerate(train_loader):
             optimizer.zero_grad()
-            x, y_true,y_class = x.to(device), y_true.to(device) ,y_class.to(device)
+            x, y_true,soft_labels,y_class = x.to(device), y_true.to(device) ,soft_labels.to(device),y_class.to(device)
             y_pred = net(x)   # Forward
-            yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
-            
-            #print("yp:", sum(len(v)for v in y_pred[1]))
-            #print("yp:", y_pred)
-            #print("yt:", y_true)
+            #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
+
             mean_loss, variance_loss = criterion1(y_pred, y_class,device)
-            #print(mean_loss)
-            #print(variance_loss)
-            #print("yp:", y_pred)
-            #print("yc:", y_class)
-            soft_labels = softlabel_t(yt_one)
+            
+            #softlabel
+            soft_labels = hard_to_soft_labels(y_class,4).to(device)
+            #soft_labels = create_softlabel(y_true,4).to(device)
+            
+            #print(soft_labels)
             softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
-            #softmax_loss = criterion2(y_pred, yt_one)
+            
+            #hard label
+            #softmax_loss = criterion2(y_pred, y_class)
             #print(softmax_loss)
+            
+            #loss = softmax_loss
             loss = mean_loss + variance_loss + softmax_loss
             pred = estimate_value(y_pred)
             pred = np.squeeze(pred)
             mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
+            status = np.ones(len(y_true))
+            index = concordance_index(y_true.cpu().numpy(), pred, status)  
             #print(loss)
             #loss = criterion(y_pred,y_true)
             # Backward propagation
@@ -579,6 +669,7 @@ def main():
             train_variance_loss += variance_loss / len(valid_loader)
             train_softmax_loss += softmax_loss / len(valid_loader)
             train_mae += mae / len(train_loader)
+            train_index += index / len(train_loader)
             #print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(
             print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}" .format(
                 batch, len(train_loader),
@@ -587,7 +678,10 @@ def main():
                 loss.item(),softmax_loss,mean_loss,variance_loss
             ), end="")
         print("    train MV: {:3.3}".format(train_loss))
+        print('')
         print("    train MAE: {:3.3}".format(train_mae))
+        print('')
+        print("    train INDEX: {:3.3}".format(train_index))
         print('')
         print('    Saving model...')
         torch.save(net.state_dict(), log_root / f"model{epoch:05}.pth")
@@ -611,18 +705,28 @@ def main():
             variance_loss_val = 0.
             softmax_loss_val = 0.
             valid_mae = 0.
-            for batch, (x, y_true, y_class) in enumerate(valid_loader):
-                x, y_true, y_class = x.to(device), y_true.to(device) ,y_class.to(device)
+            valid_index = 0.
+            for batch, (x, soft_labels, y_true,y_class) in enumerate(valid_loader):
+                x, y_true, soft_labels, y_class = x.to(device), y_true.to(device) ,soft_labels.to(device), y_class.to(device)
                 y_pred = net(x)  # Prediction
-                yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
+                #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
                 mean_loss, variance_loss = criterion1(y_pred, y_class,device)
-                soft_labels = softlabel_t(y_class)
+                
+                #softlabel
+                soft_labels = hard_to_soft_labels(y_class,4).to(device)
+                #soft_labels = create_softlabel(y_true,4).to(device)
                 softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
-                #softmax_loss = criterion2(y_pred, yt_one)
+                
+                #hard label
+                #oftmax_loss = criterion2(y_pred, y_class)
+                
                 loss = mean_loss + variance_loss + softmax_loss
+                #loss = softmax_loss
                 pred = estimate_value(y_pred)
                 pred = np.squeeze(pred)
                 mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
+                status = np.ones(len(y_true))
+                index = concordance_index(y_true.cpu().numpy(), pred, status)
                 #loss = criterion(y_pred,y_true)
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
@@ -630,12 +734,15 @@ def main():
                 mean_loss_val += mean_loss / len(valid_loader)
                 variance_loss_val += variance_loss / len(valid_loader)
                 softmax_loss_val += softmax_loss / len(valid_loader)
+                valid_index += index / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
                 #print("\r  Validating... ({:6}/{:6})[{}]".format(
                 print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}".format(
+                #print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(
                     batch, len(valid_loader),
                     ('=' * (30 * batch // len(valid_loader)) + " " * 30)[:30],
                     loss.item(),softmax_loss,mean_loss,variance_loss
+                    #loss.item()
                 ), end="")
             """for x, y_true in train_loader:
                 x, y_true = x.to(device), y_true.to(device)
@@ -647,7 +754,10 @@ def main():
         # print("          acc : {:3.3}".format(metrics['train']['cmat'].accuracy()))
         # print("          f1  : {:3.3}".format(metrics['train']['cmat'].f1()))
         print("    valid MV: {:3.3}".format(metrics['valid']['loss']))
+        print('')
         print("    valid MAE: {:3.3}".format(valid_mae))
+        print('')
+        print("    valid INDEX: {:3.3}".format(valid_index))
         # print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
         # print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
         # print("        Matrix:")
@@ -659,13 +769,14 @@ def main():
         tensorboard.add_scalar('train_Variance', train_variance_loss, epoch)
         tensorboard.add_scalar('train_Softmax', train_softmax_loss, epoch)
         tensorboard.add_scalar('train_MAE', train_mae, epoch)
+        tensorboard.add_scalar('train_Index', train_index, epoch)
         #tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
         tensorboard.add_scalar('valid_MV', metrics['valid']['loss'], epoch)
-        #tensorboard.add_scalar('train_MAE', train_loss_mae, epoch)
         tensorboard.add_scalar('valid_Mean', mean_loss_val, epoch)
         tensorboard.add_scalar('valid_Variance', variance_loss_val, epoch)
         tensorboard.add_scalar('valid_Softmax', softmax_loss_val, epoch)
         tensorboard.add_scalar('valid_MAE', valid_mae, epoch)
+        tensorboard.add_scalar('valid_Index', valid_index, epoch)
         # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 if __name__ == '__main__':
