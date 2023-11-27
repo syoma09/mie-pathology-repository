@@ -7,11 +7,13 @@ import torch.distributions as dist
 import torch.utils.data
 import torchvision
 #import yaml
+import timm
 import math
 import random
 import numpy as np
 import pandas as pd
 import sys
+import itertools
 import matplotlib.pyplot as plt
 from AutoEncoder import create_model
 from torch.utils.tensorboard import SummaryWriter
@@ -21,6 +23,7 @@ from PIL import Image
 from PIL import ImageFile
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
+from sklearn.cluster import KMeans
 from collections import OrderedDict
 from lifelines.utils import concordance_index
 from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
@@ -35,27 +38,36 @@ from sklearn.manifold import TSNE
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cuda:1'
+device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, annotations, flag):
         super(PatchDataset, self).__init__()
         self.transform = torchvision.transforms.Compose([
-            torchvision.transforms.Resize((224, 224)),
+            #torchvision.transforms.Resize((224, 224)),
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-            )
-            #torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+            #torchvision.transforms.Normalize(
+            #mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            #)
+            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
         ])
         self.__dataset = []
-        paths = []
+
         for subject, label in annotations:
+            paths = []
             paths += [
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
-        ]
+            ]
+            #print(paths)
+            random.shuffle(paths)
+            #print(paths)
+            self.__dataset.append(paths) 
+        #print(self.__dataset)
+        self.__dataset = list(itertools.chain.from_iterable(self.__dataset))
+        #print(self.__dataset)
+        """
         if(flag == 1):
             paths = []
             for subject, label in annotations:
@@ -83,10 +95,10 @@ class PatchDataset(torch.utils.data.Dataset):
                 self.__dataset += [
                     (path, label)   # Same label for one subject
                     for path in (root / subject).iterdir()
-            ]
+            ]"""
             
         # Random shuffle
-        random.shuffle(self.__dataset)
+        #random.shuffle(self.__dataset)
         # reduce_pathces = True
         # if reduce_pathces is True:
         #     data_num = len(self.__dataset) // 5
@@ -305,31 +317,107 @@ class PatchDataset(torch.utils.data.Dataset):
             
     return loss"""
 
-# ResNet + TransformerEncoder
-class ResTrans(torch.nn.Module):
-    def __init__(self,ext ,est):
+# Extracter + TransformerEncoder
+class ExtTrans(torch.nn.Module):
+    def __init__(self,ext ,est ,PE):
         super().__init__()
         self.ext = ext
         self.est = est
+        self.PE = PE
     def forward(self, x):
         x = self.ext(x)
-        x = TSNE(n_components=32,perplexity = 5,random_state=0,method='exact').fit_transform(x.cpu().detach().numpy())
-        x = torch.tensor(x).to(device)
+        sort_features,sort_clusters = features_sort(x)
+        x = self.PE(sort_features,sort_clusters).to(device)
         x = self.est(x)
         #print(x.shape)
         return x
 
-def create_model():
-    ext = torchvision.models.resnet18(pretrained = True)
-    ext.fc = nn.Sequential( 
-        nn.Linear(512, 128, bias=True),
-    )
-    
-    encoder_layer = nn.TransformerEncoderLayer(d_model=32, nhead=8)
-    est = nn.TransformerEncoder(encoder_layer, num_layers=6)
-    net = ResTrans(ext,est)
-    
-    return net
+""" # 3 dimention PE
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model: int, dropout: float = 0.1):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        self.d_model = d_model
+        self.div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        #self.register_buffer('pe', pe)
+
+    def forward(self, x,cluster):
+        
+        Args:
+            x: Tensor, shape [seq_len, batch_size, embedding_dim]
+        
+        position = cluster.unsqueeze(1)
+        pe = torch.zeros(len(cluster), 1, self.d_model).to(device)
+        pe[:, 0, 0::2] = torch.sin(position * self.div_term)
+        pe[:, 0, 1::2] = torch.cos(position * self.div_term)
+        x = x*math.sqrt(self.d_model) + pe[:x.size(0)]
+        return self.dropout(x)
+        """
+# 2 dimention PE
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model: int, dropout: float = 0.1, ):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        self.d_model = d_model
+        self.div_term = torch.exp(torch.arange(0,d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+
+    def forward(self, x,cluster):
+        """
+        Args:
+            x: Tensor, shape [seq_len, embedding_dim]
+        """
+        #claster = torch.tensor(claster)
+        
+        position = cluster.unsqueeze(1)
+        pe = torch.zeros_like(x)
+        pe[:, 0::2] = torch.sin(position * self.div_term)
+        pe[:, 1::2] = torch.cos(position * self.div_term)
+        x = x*math.sqrt(self.d_model) + pe[:x.size(0)]
+        return self.dropout(x)
+
+class TransformerModel(nn.Module):
+
+    def __init__(self, d_model: int, nhead: int, d_hid: int, 
+                    nlayers: int, dropout: float = 0.5):
+        super().__init__()
+        self.model_type = 'Transformer'
+        #self.pos_encoder = PositionalEncoding(claster, d_model, dropout)
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
+        #self.encoder = nn.Embedding(ntoken, d_model)
+        self.d_model = d_model
+        
+
+        #self.init_weights()
+
+    def init_weights(self) -> None:
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        
+
+    def forward(self, src):
+        """
+        Args:
+            src: Transformerへの入力データ
+        Returns:
+            Transformerの出力
+        """
+        
+        #src = self.pos_encoder(src,claster)
+        output = self.transformer_encoder(src)
+        
+        return output
+
+def features_sort(features):
+    clusters = KMeans(n_clusters = 4,n_init='auto').fit(features.cpu().detach().numpy())
+    sort_clusters, sort_clusters_index = torch.sort(torch.tensor(clusters.labels_),dim=0)
+    sort_clusters_index = sort_clusters_index.to(device)
+    sort_features = features[sort_clusters_index]
+
+    return sort_features, sort_clusters
 
 def create_dataset(
         src: Path, dst: Path,
@@ -397,6 +485,7 @@ def main():
     log_root.mkdir(parents=True, exist_ok=True)
     annotation_path = Path(
         "../_data/survival_time_cls/20220726_cls.csv"
+        #"../_data/survival_time_cls/20230627_survival_and_nonsurvival.csv"
         #"../_data/survival_time_cls/fake_data.csv"
     ).expanduser()
     # Create dataset if not exists
@@ -438,9 +527,11 @@ def main():
     # return
 
     # データ読み込み
+    
     flag = 0
+    
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train'],flag), batch_size=batch_size, shuffle=True,
+        PatchDataset(dataset_root, annotation['train'],flag), batch_size=batch_size,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
@@ -484,22 +575,22 @@ def main():
     #net = UNet_2D().to(device)
     #net = create_model()
     
+    """
+    # contrastive
+    train_config = Hparams()
+    ext = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
     
-    
-    #train_config = Hparams()
-    #net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
-    
-    """net.model.projection = nn.Sequential(
+    ext.model.projection = nn.Sequential(
     #net.fc = nn.Sequential( 
     #net.dec = nn.Sequential(
         nn.Linear(512, 512, bias=True),
         nn.BatchNorm1d(512),
         nn.ReLU(),
         nn.Dropout(0.5),
-        nn.Linear(512, 1, bias=True),
-    )"""
+        nn.Linear(512, 512, bias=True),
+    )
     
-    """net.load_state_dict(torch.load(
+    ext.load_state_dict(torch.load(
         #road_root / "20221220_184624" /'', map_location=device) #p=1024,s=512,b=32
         #road_root / "20230309_182905" /'model00520.pth', map_location=device) #f1 best
         #road_root / "20230530_205222" /'20230530_205224model00020.pth', map_location=device) #U-net 
@@ -508,17 +599,14 @@ def main():
         #road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive
         road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
         #road_root / "20230725_173524" /'20230725_190953model00092.pth', map_location=device)
-        #road_root / "20230817_165147" /'model00152.pth', map_location=device) #Cox 
-        #road_root / "20230901_175143" /'model00482.pth', map_location=device) #Cox
         #road_root / "20230907_132454" /'model00014.pth', map_location=device) #Cox                                 
     )"""
-    
-    
+    """
     #num_features = net.fc.in_features
     # print(num_features)  # 512
     #net.dec = nn.ReLU()
     #print(net.model.projection)
-    """
+    
     #net.model.projection = nn.Sequential(
     net.fc = nn.Sequential( 
     #net.dec = nn.Sequential(
@@ -583,21 +671,72 @@ def main():
         nn.Dropout(0.5),
         nn.Linear(512, 4, bias=True),
     )"""
-
     
+    # AE + Transformer
+    ext = create_model()
+    ext.load_state_dict(torch.load(
+        #road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive
+        road_root / "20230928_160620" /'20230928_160625model00166.pth', map_location=device) #AE                               
+    )
     
-    #net = net.to(device)
-    net = create_model().to(device)
-    num_features = 32
+    ext.dec = nn.Sequential( 
+        nn.Linear(512, 128, bias=True),
+    )
+    for param in ext.parameters():
+        param.requires_grad = False
+    #last_layer = ext.dec
+    last_layer = list(ext.children())[-1]
+    print(f'except last layer: {last_layer}')
+    for param in last_layer.parameters():
+        param.requires_grad = True
+    
+    #ext = torchvision.models.resnet18(pretrained = True)
+    #ext.fc = nn.Linear(512,128, bias = True)
+    
+    #encoder_layer = nn.TransformerEncoderLayer(d_model=128, nhead=8)
+    #ext = net.to(device)
+    ext = ext.to(device)
+    #net = nn.TransformerEncoder(encoder_layer, num_layers=6)
+    emsize = 128  # 埋め込みベクトルの次元
+    d_hid = 512 # nn.TransformerEncoderのフィードフォワードネットワークの次元
+    nlayers = 6  # nn.TransformerEncoder内のnn.TransformerEncoderLayerの数
+    nhead = 8  # nn.MultiheadAttention内のヘッドの数
+    dropout = 0.2  # dropoutの割合
+    PE = PositionalEncoding(emsize,dropout)
+    net = TransformerModel(emsize, nhead, d_hid, nlayers, dropout)
     net = nn.Sequential(
     net,
-    nn.Linear(num_features,4,bias = True)
+    nn.Linear(128, 128, bias=True),
+    nn.BatchNorm1d(128),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(128, 4, bias=True),
+    )
+    
+    print(net)
+    net = ExtTrans(ext,net,PE)
+    net = net.to(device)
+    """net = create_model().to(device)
+    num_features = 128
+    net = nn.Sequential(
+    net,
+    nn.Linear(128, 128, bias=True),
+    nn.BatchNorm1d(128),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(128,128, bias=True),
+    nn.BatchNorm1d(128),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(128, 4, bias=True),
     )
     net = net.to(device)
-    print(net)
+    print(net)"""
     # net = torch.nn.DataParallel(net).to(device)
     #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
+    #optimizer_ext = torch.optim.RAdam(ext.parameters(), lr=0.0001)
     optimizer = torch.optim.RAdam(net.parameters(), lr=0.0001)
+
 
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()
@@ -620,7 +759,10 @@ def main():
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
     #print(net)
+
     
+
+
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
         # Switch to training mode
@@ -632,10 +774,12 @@ def main():
         train_mae = 0.
         train_index=0.
         #train_loss_mae = 0.
-        for batch, (x, soft_labels, y_true,y_class) in enumerate(train_loader):
+        for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
             x, y_true,soft_labels,y_class = x.to(device), y_true.to(device) ,soft_labels.to(device),y_class.to(device)
+            
             y_pred = net(x)   # Forward
+
             #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
 
             mean_loss, variance_loss = criterion1(y_pred, y_class,device)
@@ -657,7 +801,9 @@ def main():
             pred = np.squeeze(pred)
             mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
             status = np.ones(len(y_true))
-            index = concordance_index(y_true.cpu().numpy(), pred, status)  
+            
+            #index = concordance_index(y_true.cpu().numpy(), pred, status)  
+            
             #print(loss)
             #loss = criterion(y_pred,y_true)
             # Backward propagation
@@ -665,11 +811,13 @@ def main():
             optimizer.step()    # Update parameters
             # Logging
             train_loss += loss.item() / len(train_loader)
-            train_mean_loss += mean_loss / len(valid_loader)
-            train_variance_loss += variance_loss / len(valid_loader)
-            train_softmax_loss += softmax_loss / len(valid_loader)
+            train_mean_loss += mean_loss / len(train_loader)
+            train_variance_loss += variance_loss / len(train_loader)
+            train_softmax_loss += softmax_loss / len(train_loader)
             train_mae += mae / len(train_loader)
-            train_index += index / len(train_loader)
+            
+            #train_index += index / len(train_loader)
+            
             #print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(
             print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}" .format(
                 batch, len(train_loader),
@@ -681,7 +829,7 @@ def main():
         print('')
         print("    train MAE: {:3.3}".format(train_mae))
         print('')
-        print("    train INDEX: {:3.3}".format(train_index))
+        #print("    train INDEX: {:3.3}".format(train_index))
         print('')
         print('    Saving model...')
         torch.save(net.state_dict(), log_root / f"model{epoch:05}.pth")
@@ -708,7 +856,10 @@ def main():
             valid_index = 0.
             for batch, (x, soft_labels, y_true,y_class) in enumerate(valid_loader):
                 x, y_true, soft_labels, y_class = x.to(device), y_true.to(device) ,soft_labels.to(device), y_class.to(device)
-                y_pred = net(x)  # Prediction
+                
+                y_pred = net(x)   # Forward
+                
+                #y_pred = net(x)  # Prediction
                 #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
                 mean_loss, variance_loss = criterion1(y_pred, y_class,device)
                 
@@ -726,7 +877,7 @@ def main():
                 pred = np.squeeze(pred)
                 mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
                 status = np.ones(len(y_true))
-                index = concordance_index(y_true.cpu().numpy(), pred, status)
+                #index = concordance_index(y_true.cpu().numpy(), pred, status)
                 #loss = criterion(y_pred,y_true)
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
@@ -734,7 +885,7 @@ def main():
                 mean_loss_val += mean_loss / len(valid_loader)
                 variance_loss_val += variance_loss / len(valid_loader)
                 softmax_loss_val += softmax_loss / len(valid_loader)
-                valid_index += index / len(valid_loader)
+                #valid_index += index / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
                 #print("\r  Validating... ({:6}/{:6})[{}]".format(
                 print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}".format(
@@ -757,7 +908,9 @@ def main():
         print('')
         print("    valid MAE: {:3.3}".format(valid_mae))
         print('')
-        print("    valid INDEX: {:3.3}".format(valid_index))
+        
+        #print("    valid INDEX: {:3.3}".format(valid_index))
+        
         # print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
         # print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
         # print("        Matrix:")
@@ -769,14 +922,14 @@ def main():
         tensorboard.add_scalar('train_Variance', train_variance_loss, epoch)
         tensorboard.add_scalar('train_Softmax', train_softmax_loss, epoch)
         tensorboard.add_scalar('train_MAE', train_mae, epoch)
-        tensorboard.add_scalar('train_Index', train_index, epoch)
+        #tensorboard.add_scalar('train_Index', train_index, epoch)
         #tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
         tensorboard.add_scalar('valid_MV', metrics['valid']['loss'], epoch)
         tensorboard.add_scalar('valid_Mean', mean_loss_val, epoch)
         tensorboard.add_scalar('valid_Variance', variance_loss_val, epoch)
         tensorboard.add_scalar('valid_Softmax', softmax_loss_val, epoch)
         tensorboard.add_scalar('valid_MAE', valid_mae, epoch)
-        tensorboard.add_scalar('valid_Index', valid_index, epoch)
+        #tensorboard.add_scalar('valid_Index', valid_index, epoch)
         # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 if __name__ == '__main__':
