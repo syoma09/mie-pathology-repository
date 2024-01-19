@@ -32,7 +32,7 @@ from AgeEstimation.mean_variance_loss import MeanVarianceLoss
 from VAE import VAE
 from Unet import Generator
 from contrastive_learning import Hparams,SimCLR_pl,AddProjection
-from labels import estimate_value, c_soft, hard_to_soft_labels
+from labels import estimate_value, c_soft, hard_to_soft_labels, create_softlabel
 from sklearn.manifold import TSNE
 
 # To avoid "OSError: image file is truncated"
@@ -61,12 +61,20 @@ class PatchDataset(torch.utils.data.Dataset):
                 for path in (root / subject).iterdir()
             ]
             #print(paths)
-            random.shuffle(paths)
+            #random.shuffle(paths)
+
             #print(paths)
-            self.__dataset.append(paths) 
-        #print(self.__dataset)
+            """if(flag == 0):
+                self.__dataset.append(random.sample(paths,len(paths) // 2)) 
+            else:
+                self.__dataset.append(paths)"""
+            data = reshaped_data(paths)
+            #print(data)
+            self.__dataset.append(data)
+        #print((self.__dataset))
         self.__dataset = list(itertools.chain.from_iterable(self.__dataset))
-        #print(self.__dataset)
+        #print((self.__dataset))
+        #print(len(self.__dataset))
         """
         if(flag == 1):
             paths = []
@@ -108,16 +116,14 @@ class PatchDataset(torch.utils.data.Dataset):
         self.__num_class = 4
         # self.__dataset = self.__dataset[:512]
 
-        print('PatchDataset')
+        """print('PatchDataset')
         print('  # patch :', len(self.__dataset))
         print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
         print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
         print('  # of 2  :', len([l for _, l in self.__dataset if (22 < l) & (l <= 33)]))
         print('  # of 3  :', len([l for _, l in self.__dataset if (33 < l) & (l <= 44)]))
         print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
-
-
-
+        """
 
         '''self.paths = []
         for subject in subjects:
@@ -144,9 +150,25 @@ class PatchDataset(torch.utils.data.Dataset):
                         Label is always "10" <= MetricLearning
         """
     # img = self.data[item, :, :, :].view(3, 32, 32)
-        path, label = self.__dataset[item]
+        #self.l = self.__dataset[item]
+        #print(self.l)
+        #path, label = self.l[item]
+        
+        # Transformer
+        path_group, label_group = self.pull_group(item)
+        #print(type(path_group[0]))
+        img_group = self.pathtoimg(path_group)
+        group_transform = VideoTransform()
+        img_group = group_transform(img_group)
+        label = label_group[0]
+        
+        # CNN
+        """path, label = self.__dataset[item]
+        print(self.__dataset[item])
         img = Image.open(path).convert('RGB')
-        img = self.transform(img)
+        img = self.transform(img)"""
+        
+        
         #img = torchvision.transforms.functional.to_tensor(img)
 
         # s0_st34.229508200000005_e0_et34.229508200000005_00000442img.png
@@ -155,12 +177,7 @@ class PatchDataset(torch.utils.data.Dataset):
 
         # Normalize
         #label /= 90.
-        '''if(label < 13):
-            label_class = 0
-        elif(label < 34):
-            label_class = 1
-        elif(label < 67):
-            label_class = 2'''
+        
         if(label < 11):
             label_class = 0
         elif(label < 22):
@@ -169,65 +186,111 @@ class PatchDataset(torch.utils.data.Dataset):
             label_class = 2
         elif(label < 44):
             label_class = 3
-        '''elif(label < 44):
-            label_class = 4
-        elif(label < 36):
-            label_class = 5
-        elif(label < 42):
-            label_class = 6
-        elif(label < 48):
-            label_class = 7
-        elif(label < 24):
-            label_class = 11
-        elif(label < 26):
-            label_class = 12
-        elif(label < 28):
-            label_class = 13
-        elif(label < 30):
-            label_class = 14
-        elif(label < 32):
-            label_class = 15
-        elif(label < 34):
-            label_class = 16
-        elif(label < 36):
-            label_class = 17
-        elif(label < 38):
-            label_class = 18
-        elif(label < 40):
-            label_class = 19
-        elif(label < 42):
-            label_class = 20
-        elif(label < 44):
-            label_class = 21
-        elif(label < 46):
-            label_class = 22
-        elif(label < 48):
-            label_class = 23
-        elif(label < 50):
-            label_class = 24
-        elif(label < 52):
-            label_class = 25
-        elif(label < 54):
-            label_class = 26
-        elif(label < 56):
-            label_class = 27
-        elif(label < 58):
-            label_class = 28
-        elif(label < 60):
-            label_class = 29
-        elif(label < 62):
-            label_class = 30
-        elif(label < 64):
-            label_class = 31
-        elif(label < 66):
-            label_class = 32
-        elif(label < 68):
-            label_class = 33'''
+
         # Tensor
         label = torch.tensor(label, dtype=torch.float)
         soft_labels = c_soft(label,4)
-        return img, soft_labels, label, label_class
+        return img_group, soft_labels, label, label_class
 
+    def pull_group(self,item):
+        path_group = []
+        label_group = []
+        tuple_group = self.__dataset[item]
+        for i in range(len(tuple_group)):
+            path_label = tuple_group[i]
+            path, label = path_label
+            path_group.append(path)
+            label_group.append(label)
+        
+        return path_group, label_group
+    
+    def pathtoimg(self,path_group):
+        return [Image.open(path).convert('RGB') for path in path_group] 
+
+        
+
+
+class GroupToTensor():
+    ''' 画像をまとめてテンソル化するクラス。
+    '''
+
+    def __init__(self):
+        '''テンソル化する処理を用意'''
+        self.to_tensor = torchvision.transforms.ToTensor()
+
+    def __call__(self, img_group):
+        '''テンソル化をimg_group(リスト)内の各imgに実施
+        0から1ではなく、0から255で扱うため、255をかけ算する。
+        0から255で扱うのは、学習済みデータの形式に合わせるため
+        '''
+
+        return [self.to_tensor(img) for img in img_group]
+
+class PathToImg():
+    ''' pathをまとめて画像化するクラス。
+    '''
+
+    def __init__(self):
+        '''テンソル化する処理を用意'''
+        self.to_img = Image.open(path).convert('RGB')
+
+    def __call__(self, path_group):
+        '''テンソル化をimg_group(リスト)内の各imgに実施
+        0から1ではなく、0から255で扱うため、255をかけ算する。
+        0から255で扱うのは、学習済みデータの形式に合わせるため
+        '''
+
+        return [self.to_img(path) for path in path_group]
+
+class VideoTransform():
+    """
+    動画を画像にした画像ファイルの前処理クラス。学習時と推論時で異なる動作をします。
+    動画を画像に分割しているため、分割された画像たちをまとめて前処理する点に注意してください。
+    """
+
+    def __init__(self):
+        self.data_transform = torchvision.transforms.Compose([
+                # DataAugumentation()  # 今回は省略
+                #GroupResize(int(resize)),  # 画像をまとめてリサイズ　
+                #GroupCenterCrop(crop_size),  # 画像をまとめてセンタークロップ
+                GroupToTensor(),  # データをPyTorchのテンソルに
+                GroupImgNormalize(),  # データを標準化
+                Stack()  # 複数画像をframes次元で結合させる
+            ])
+
+    def __call__(self, img_group):
+        """
+        Parameters
+        ----------
+        phase : 'train' or 'val'
+            前処理のモードを指定。
+        """
+        return self.data_transform(img_group)
+
+class GroupImgNormalize():
+    ''' 画像をまとめて標準化するクラス。
+    '''
+
+    def __init__(self):
+        '''標準化する処理を用意'''
+        self.normlize = torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+        
+
+    def __call__(self, img_group):
+        '''標準化をimg_group(リスト)内の各imgに実施'''
+        return [self.normlize(img) for img in img_group]
+
+class Stack():
+    ''' 画像を一つのテンソルにまとめるクラス。
+    '''
+
+    def __call__(self, img_group):
+        '''img_groupはtorch.Size([3, 256, 256])を要素とするリスト
+        '''
+        ret = torch.cat([x.unsqueeze(dim=0) for x in img_group], dim=0)  # frames次元で結合
+        # unsqueeze(dim=0)はあらたにframes用の次元を作成しています
+
+        return ret
     # @classmethod
     # def load_list(cls, root):
     #     # 顎骨正常データ取得と整形
@@ -272,6 +335,28 @@ class PatchDataset(torch.utils.data.Dataset):
 #         c_true = torch.argmax(true)
 #
 #         return torch.abs(c_pred - c_true)
+
+def split_list(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i+n]
+
+
+def reshaped_data(data):
+    sequence = 8
+    #print(x)
+    remainder = len(data) % sequence
+
+    # データをランダムにシャッフル
+    np.random.shuffle(data)
+
+    # 余りがある場合、データの最後から余りの分だけ削除
+    if remainder > 0:
+        data = data[:-remainder]
+
+    # reshape関数を使って分割
+    reshaped_data = list(split_list(data,sequence))
+
+    return reshaped_data
 
 """def Mean_Variance_loss(y_pred,y_class):
     N = 4 #Number of classes
@@ -324,36 +409,58 @@ class ExtTrans(torch.nn.Module):
         self.ext = ext
         self.est = est
         self.PE = PE
-    def forward(self, x):
-        x = self.ext(x)
-        sort_features,sort_clusters = features_sort(x)
-        x = self.PE(sort_features,sort_clusters).to(device)
+        self.flatten = nn.Flatten()
+        self.network = net = nn.Sequential(
+        nn.Linear(1024, 256, bias=True),
+        nn.BatchNorm1d(256),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(256, 64, bias=True),
+        nn.BatchNorm1d(64),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(64, 4, bias=True),
+        )
+    def forward(self, sort_features_list,sort_clusters_list):
+        #x = self.ext(x)
+        #sort_features,sort_clusters = features_sort(x)
+        x = self.PE(sort_features_list,sort_clusters_list).to(device)
+        #print(x.shape)
         x = self.est(x)
+        x = self.flatten(x)
+        x = self.network(x)
         #print(x.shape)
         return x
 
-""" # 3 dimention PE
+# 3 dimention PE
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model: int, dropout: float = 0.1):
+    def __init__(self, batch_size, d_model: int, dropout: float = 0.1):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
+        self.batch_size = batch_size
         self.d_model = d_model
         self.div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         #self.register_buffer('pe', pe)
 
-    def forward(self, x,cluster):
+    def forward(self, x,sort_clusters_list):
         
-        Args:
-            x: Tensor, shape [seq_len, batch_size, embedding_dim]
+        #Args:
+        #    x: Tensor, shape [batch_size, seq_len, embedding_dim]
         
-        position = cluster.unsqueeze(1)
-        pe = torch.zeros(len(cluster), 1, self.d_model).to(device)
-        pe[:, 0, 0::2] = torch.sin(position * self.div_term)
-        pe[:, 0, 1::2] = torch.cos(position * self.div_term)
-        x = x*math.sqrt(self.d_model) + pe[:x.size(0)]
+        batch_size = self.batch_size
+        #print(len(sort_clusters_list[0]))
+        pe = torch.zeros(batch_size, len(sort_clusters_list[0]), self.d_model).to(device)
+        
+        for i, position in enumerate(sort_clusters_list):
+            for j in range(len(position)):
+                pe[i, j, 0::2] = torch.sin(position[j] * self.div_term)
+                pe[i, j, 1::2] = torch.cos(position[j] * self.div_term)
+            x[i] = x[i]*math.sqrt(self.d_model) + pe[i,:x.size(1)]
+        #print(x.shape)
+        
         return self.dropout(x)
-        """
+"""        
 # 2 dimention PE
 class PositionalEncoding(nn.Module):
 
@@ -365,10 +472,10 @@ class PositionalEncoding(nn.Module):
         
 
     def forward(self, x,cluster):
-        """
-        Args:
-            x: Tensor, shape [seq_len, embedding_dim]
-        """
+        
+        #Args:
+        #    x: Tensor, shape [seq_len, embedding_dim]
+        
         #claster = torch.tensor(claster)
         
         position = cluster.unsqueeze(1)
@@ -377,7 +484,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * self.div_term)
         x = x*math.sqrt(self.d_model) + pe[:x.size(0)]
         return self.dropout(x)
-
+"""
 class TransformerModel(nn.Module):
 
     def __init__(self, d_model: int, nhead: int, d_hid: int, 
@@ -385,7 +492,7 @@ class TransformerModel(nn.Module):
         super().__init__()
         self.model_type = 'Transformer'
         #self.pos_encoder = PositionalEncoding(claster, d_model, dropout)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, d_hid, dropout,batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
         #self.encoder = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
@@ -412,7 +519,7 @@ class TransformerModel(nn.Module):
         return output
 
 def features_sort(features):
-    clusters = KMeans(n_clusters = 4,n_init='auto').fit(features.cpu().detach().numpy())
+    clusters = KMeans(n_clusters = 8,n_init='auto').fit(features.cpu().detach().numpy())
     sort_clusters, sort_clusters_index = torch.sort(torch.tensor(clusters.labels_),dim=0)
     sort_clusters_index = sort_clusters_index.to(device)
     sort_features = features[sort_clusters_index]
@@ -484,6 +591,9 @@ def main():
     log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_root.mkdir(parents=True, exist_ok=True)
     annotation_path = Path(
+        #"../_data/survival_time_cls/20220726_cls/cv0.csv"
+        #"../_data/survival_time_cls/20220726_cls/cv1.csv"
+        #"../_data/survival_time_cls/20220726_cls/cv2.csv"
         "../_data/survival_time_cls/20220726_cls.csv"
         #"../_data/survival_time_cls/20230627_survival_and_nonsurvival.csv"
         #"../_data/survival_time_cls/fake_data.csv"
@@ -512,7 +622,7 @@ def main():
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
     epochs = 1000
-    batch_size = 32     # 64 requires 19 GiB VRAM
+    batch_size = 8     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 4   # For SMT
     # Load train/valid yaml
     '''with open(src / "survival_time.yml", "r") as f:
@@ -531,12 +641,14 @@ def main():
     flag = 0
     
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train'],flag), batch_size=batch_size,
-        num_workers=num_workers
+        PatchDataset(dataset_root, annotation['train'],flag), batch_size=batch_size,shuffle = True,
+        num_workers=num_workers,drop_last = True
     )
+
+    flag = 1
     valid_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['valid'],flag), batch_size=batch_size,
-        num_workers=num_workers
+        num_workers=num_workers,drop_last = True
     )
     """
     train_dataset = []
@@ -657,8 +769,9 @@ def main():
     for param in last_layer.parameters():
         param.requires_grad = True
     """
-    # ResNet
     """
+    # ResNet
+    
     net = torchvision.models.resnet18(pretrained = True)
     net.fc = nn.Sequential( 
         nn.Linear(512, 512, bias=True),
@@ -670,7 +783,8 @@ def main():
         nn.ReLU(),
         nn.Dropout(0.5),
         nn.Linear(512, 4, bias=True),
-    )"""
+    )
+    """
     
     # AE + Transformer
     ext = create_model()
@@ -696,26 +810,38 @@ def main():
     #encoder_layer = nn.TransformerEncoderLayer(d_model=128, nhead=8)
     #ext = net.to(device)
     ext = ext.to(device)
+    
     #net = nn.TransformerEncoder(encoder_layer, num_layers=6)
     emsize = 128  # 埋め込みベクトルの次元
     d_hid = 512 # nn.TransformerEncoderのフィードフォワードネットワークの次元
     nlayers = 6  # nn.TransformerEncoder内のnn.TransformerEncoderLayerの数
     nhead = 8  # nn.MultiheadAttention内のヘッドの数
     dropout = 0.2  # dropoutの割合
-    PE = PositionalEncoding(emsize,dropout)
-    net = TransformerModel(emsize, nhead, d_hid, nlayers, dropout)
-    net = nn.Sequential(
-    net,
-    nn.Linear(128, 128, bias=True),
-    nn.BatchNorm1d(128),
-    nn.ReLU(),
-    nn.Dropout(0.5),
-    nn.Linear(128, 4, bias=True),
-    )
+    PE = PositionalEncoding(batch_size,emsize,dropout)
+    est = TransformerModel(emsize, nhead, d_hid, nlayers, dropout)
     
-    print(net)
-    net = ExtTrans(ext,net,PE)
+    net = ExtTrans(ext,est,PE)
     net = net.to(device)
+    """
+    #モデルの状態辞書を取得
+    model_state_dict = net.state_dict()
+    # モデルの状態辞書のキーを表示
+    for key in model_state_dict.keys():
+        print(key)
+    # BatchNorm1d層の名前を取得
+    bn_layer_name = "est.2"  # この名前はSequential内のBatchNorm1d層の名前に依存します
+
+    # running_meanとrunning_varにアクセス
+    running_mean_key = bn_layer_name + '.running_mean'
+    running_var_key = bn_layer_name + '.running_var'
+
+    running_mean = model_state_dict[running_mean_key]
+    running_var = model_state_dict[running_var_key]
+
+    print("Running Mean shape:", running_mean.shape)
+    print("Running Var shape:", running_var.shape)
+    """
+    
     """net = create_model().to(device)
     num_features = 128
     net = nn.Sequential(
@@ -729,9 +855,11 @@ def main():
     nn.ReLU(),
     nn.Dropout(0.5),
     nn.Linear(128, 4, bias=True),
-    )
-    net = net.to(device)
-    print(net)"""
+    )"""
+    
+    
+    #net = net.to(device)
+    #print(net)
     # net = torch.nn.DataParallel(net).to(device)
     #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
     #optimizer_ext = torch.optim.RAdam(ext.parameters(), lr=0.0001)
@@ -758,7 +886,7 @@ def main():
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
-    #print(net)
+    print(net)
 
     
 
@@ -773,21 +901,37 @@ def main():
         train_softmax_loss = 0.
         train_mae = 0.
         train_index=0.
-        #train_loss_mae = 0.
+        train_loss_mae = 0.
         for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
             x, y_true,soft_labels,y_class = x.to(device), y_true.to(device) ,soft_labels.to(device),y_class.to(device)
+            # テンソルを格納するリスト
+            #feature_list = []
+            sort_features_list = []
+            sort_clusters_list = []
+            for i in range(len(x)):
+                feature = ext(x[i,:,:,:])
+                #print(feature.shape)
+                sort_features,sort_clusters = features_sort(feature)
+                #feature_list.append(feature)
+                sort_features_list.append(sort_features)
+                sort_clusters_list.append(sort_clusters)
+            combined_feature = torch.cat(sort_features_list)
+            combined_feature = torch.reshape(combined_feature,(batch_size,8,emsize))
+            #print(combined_feature.shape)  
             
-            y_pred = net(x)   # Forward
-
+            y_pred = net(combined_feature,sort_clusters_list)   # Forward
+            #print(y_pred.shape)
             #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
 
             mean_loss, variance_loss = criterion1(y_pred, y_class,device)
             
             #softlabel
-            soft_labels = hard_to_soft_labels(y_class,4).to(device)
-            #soft_labels = create_softlabel(y_true,4).to(device)
+            #soft_labels = hard_to_soft_labels(y_class,4).to(device)
+            soft_labels = create_softlabel(y_true,4).to(device)
             
+
+
             #print(soft_labels)
             softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
             
@@ -795,14 +939,14 @@ def main():
             #softmax_loss = criterion2(y_pred, y_class)
             #print(softmax_loss)
             
-            #loss = softmax_loss
-            loss = mean_loss + variance_loss + softmax_loss
+            loss = softmax_loss
+            #loss = mean_loss + variance_loss + softmax_loss
             pred = estimate_value(y_pred)
             pred = np.squeeze(pred)
             mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
             status = np.ones(len(y_true))
             
-            #index = concordance_index(y_true.cpu().numpy(), pred, status)  
+            index = concordance_index(y_true.cpu().numpy(), pred, status)  
             
             #print(loss)
             #loss = criterion(y_pred,y_true)
@@ -816,7 +960,7 @@ def main():
             train_softmax_loss += softmax_loss / len(train_loader)
             train_mae += mae / len(train_loader)
             
-            #train_index += index / len(train_loader)
+            train_index += index / len(train_loader)
             
             #print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(
             print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}" .format(
@@ -829,7 +973,7 @@ def main():
         print('')
         print("    train MAE: {:3.3}".format(train_mae))
         print('')
-        #print("    train INDEX: {:3.3}".format(train_index))
+        print("    train INDEX: {:3.3}".format(train_index))
         print('')
         print('    Saving model...')
         torch.save(net.state_dict(), log_root / f"model{epoch:05}.pth")
@@ -856,28 +1000,44 @@ def main():
             valid_index = 0.
             for batch, (x, soft_labels, y_true,y_class) in enumerate(valid_loader):
                 x, y_true, soft_labels, y_class = x.to(device), y_true.to(device) ,soft_labels.to(device), y_class.to(device)
-                
-                y_pred = net(x)   # Forward
+                # テンソルを格納するリスト
+                #feature_list = []
+                sort_features_list = []
+                sort_clusters_list = []
+                for i in range(len(x)):
+                    feature = ext(x[i,:,:,:])
+                    #print(feature.shape)
+                    sort_features,sort_clusters = features_sort(feature)
+                    #feature_list.append(feature)
+                    sort_features_list.append(sort_features)
+                    sort_clusters_list.append(sort_clusters)
+                combined_feature = torch.cat(sort_features_list)
+                combined_feature = torch.reshape(combined_feature,(batch_size,8,emsize))
+                #print(combined_feature.shape)  
+            
+                y_pred = net(combined_feature,sort_clusters_list)   # Forward
                 
                 #y_pred = net(x)  # Prediction
                 #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
                 mean_loss, variance_loss = criterion1(y_pred, y_class,device)
                 
                 #softlabel
-                soft_labels = hard_to_soft_labels(y_class,4).to(device)
-                #soft_labels = create_softlabel(y_true,4).to(device)
+                #soft_labels = hard_to_soft_labels(y_class,4).to(device)
+                soft_labels = create_softlabel(y_true,4).to(device)
+                
                 softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
                 
                 #hard label
-                #oftmax_loss = criterion2(y_pred, y_class)
+                #softmax_loss = criterion2(y_pred, y_class)
                 
-                loss = mean_loss + variance_loss + softmax_loss
-                #loss = softmax_loss
+                #loss = mean_loss + variance_loss + softmax_loss
+                loss = softmax_loss
+                
                 pred = estimate_value(y_pred)
                 pred = np.squeeze(pred)
                 mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
                 status = np.ones(len(y_true))
-                #index = concordance_index(y_true.cpu().numpy(), pred, status)
+                index = concordance_index(y_true.cpu().numpy(), pred, status)
                 #loss = criterion(y_pred,y_true)
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
@@ -885,7 +1045,7 @@ def main():
                 mean_loss_val += mean_loss / len(valid_loader)
                 variance_loss_val += variance_loss / len(valid_loader)
                 softmax_loss_val += softmax_loss / len(valid_loader)
-                #valid_index += index / len(valid_loader)
+                valid_index += index / len(valid_loader)
                 # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
                 #print("\r  Validating... ({:6}/{:6})[{}]".format(
                 print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}".format(
@@ -909,7 +1069,7 @@ def main():
         print("    valid MAE: {:3.3}".format(valid_mae))
         print('')
         
-        #print("    valid INDEX: {:3.3}".format(valid_index))
+        print("    valid INDEX: {:3.3}".format(valid_index))
         
         # print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
         # print("          f1  : {:3.3}".format(metrics['valid']['cmat'].f1()))
@@ -922,14 +1082,14 @@ def main():
         tensorboard.add_scalar('train_Variance', train_variance_loss, epoch)
         tensorboard.add_scalar('train_Softmax', train_softmax_loss, epoch)
         tensorboard.add_scalar('train_MAE', train_mae, epoch)
-        #tensorboard.add_scalar('train_Index', train_index, epoch)
+        tensorboard.add_scalar('train_Index', train_index, epoch)
         #tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
         tensorboard.add_scalar('valid_MV', metrics['valid']['loss'], epoch)
         tensorboard.add_scalar('valid_Mean', mean_loss_val, epoch)
         tensorboard.add_scalar('valid_Variance', variance_loss_val, epoch)
         tensorboard.add_scalar('valid_Softmax', softmax_loss_val, epoch)
         tensorboard.add_scalar('valid_MAE', valid_mae, epoch)
-        #tensorboard.add_scalar('valid_Index', valid_index, epoch)
+        tensorboard.add_scalar('valid_Index', valid_index, epoch)
         # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
 if __name__ == '__main__':
