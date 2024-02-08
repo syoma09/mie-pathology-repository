@@ -978,6 +978,7 @@ def main():
         for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
             x, y_true,soft_labels,y_class = x.to(device), y_true.to(device) ,soft_labels.to(device),y_class.to(device)
+            print(y_true)
             # テンソルを格納するリスト
             #feature_list = []
             sort_features_list = []
