@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.distributions as dist
 import torch.utils.data
 import torchvision
-#import yaml
 import timm
 import math
 import random
@@ -28,13 +27,15 @@ from sklearn.cluster import KMeans
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from collections import OrderedDict
 from lifelines.utils import concordance_index
-from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
 from AgeEstimation.mean_variance_loss import MeanVarianceLoss
 from VAE import VAE
 from Unet import Generator
 from contrastive_learning import Hparams,SimCLR_pl,AddProjection
-from labels import estimate_value, c_soft, hard_to_soft_labels, create_softlabel
+from transformer_model import ExtTrans, PositionalEncoding, TransformerModel, features_sort
+from create_soft_labels import estimate_value, create_softlabel_tight, hard_to_soft_labels, create_softlabel_survival_time_wise
+from three_dimention_dataloader import GroupToTensor, VideoTransform, GroupImgNormalize, Stack, split_list, reshaped_data
 from sklearn.manifold import TSNE
 
 # To avoid "OSError: image file is truncated"
@@ -56,7 +57,15 @@ class PatchDataset(torch.utils.data.Dataset):
         ])
         self.__dataset = []
 
+        #CNN
         for subject, label in annotations:
+            self.__dataset += [
+                (path, label)   # Same label for one subject
+                for path in (root / subject).iterdir()
+            ]
+
+        #Transformer
+        """for subject, label in annotations:
             paths = []
             paths += [
                 (path, label)   # Same label for one subject
@@ -64,15 +73,9 @@ class PatchDataset(torch.utils.data.Dataset):
             ]
             #print(paths)
             #random.shuffle(paths)
-
-            #print(paths)
-            """if(flag == 0):
-                self.__dataset.append(random.sample(paths,len(paths) // 2)) 
-            else:
-                self.__dataset.append(paths)"""
             data = reshaped_data(paths)
             #print(data)
-            self.__dataset += data
+            self.__dataset += data"""
         #print((self.__dataset))
         #self.__dataset = list(itertools.chain.from_iterable(self.__dataset))
         random.shuffle(self.__dataset)
@@ -128,20 +131,6 @@ class PatchDataset(torch.utils.data.Dataset):
         print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
         """
 
-        '''self.paths = []
-        for subject in subjects:
-            print(subject)
-            path = []
-            path += list((root / subject).iterdir())
-            if(subject == "57-10" or subject == "57-11"):
-                self.paths += random.sample(path,4000)
-            elif(subject == "38-4" or subject == "38-5"):
-                self.paths += random.sample(path,len(path))
-            elif(len(path) < 2000):
-                self.paths += random.sample(path,len(path))
-            else:
-                self.paths+= random.sample(path,2000)
-            self.paths += list((root / subject).iterdir())'''
         #print(self.paths[0])
         print(len(self.__dataset))
     def __len__(self):
@@ -158,18 +147,17 @@ class PatchDataset(torch.utils.data.Dataset):
         #path, label = self.l[item]
         
         # Transformer
-        path_group, [label, *_] = self.pull_group(item)
+        """path_group, [label, *_] = self.pull_group(item)
         #print(type(path_group[0]))
         img_group = self.pathtoimg(path_group)
         group_transform = VideoTransform()
         img_group = group_transform(img_group)
-        #label = label_group[0]
+        #label = label_group[0]"""
         
         # CNN
-        """path, label = self.__dataset[item]
-        print(self.__dataset[item])
+        path, label = self.__dataset[item]
         img = Image.open(path).convert('RGB')
-        img = self.transform(img)"""
+        img = self.transform(img)
         
         
         #img = torchvision.transforms.functional.to_tensor(img)
@@ -192,8 +180,15 @@ class PatchDataset(torch.utils.data.Dataset):
 
         # Tensor
         label = torch.tensor(label, dtype=torch.float)
-        soft_labels = c_soft(label,4)
-        return img_group, soft_labels, label, label_class
+        
+        #softlabel
+        num_classes = 4
+        #soft_labels = hard_to_soft_labels(label_class,num_classes)#basic
+        #soft_labels = create_softlabel_tight(label,num_classes)#tight
+        soft_labels = create_softlabel_survival_time_wise(label,num_classes)#survivaltime_wise
+        
+        return img, soft_labels, label, label_class #CNN
+        #return img_group, soft_labels, label, label_class #Transformer
 
     def pull_group(self,item :int)->([str],[float]):
 
@@ -205,88 +200,7 @@ class PatchDataset(torch.utils.data.Dataset):
     def pathtoimg(self,path_group):
         return [Image.open(path).convert('RGB') for path in path_group] 
 
-        
 
-
-class GroupToTensor():
-    ''' 画像をまとめてテンソル化するクラス。
-    '''
-
-    def __init__(self):
-        '''テンソル化する処理を用意'''
-        self.to_tensor = torchvision.transforms.ToTensor()
-
-    def __call__(self, img_group):
-        '''テンソル化をimg_group(リスト)内の各imgに実施
-        0から1ではなく、0から255で扱うため、255をかけ算する。
-        0から255で扱うのは、学習済みデータの形式に合わせるため
-        '''
-
-        return [self.to_tensor(img) for img in img_group]
-
-"""class PathToImg():
-    ''' pathをまとめて画像化するクラス。
-    '''
-
-    def __init__(self):
-        '''テンソル化する処理を用意'''
-        self.to_img = Image.open(path).convert('RGB')
-
-    def __call__(self, path_group):
-        '''テンソル化をimg_group(リスト)内の各imgに実施
-        '''
-
-        return [self.to_img(path) for path in path_group]"""
-
-class VideoTransform():
-    """
-    動画を画像にした画像ファイルの前処理クラス。学習時と推論時で異なる動作をします。
-    動画を画像に分割しているため、分割された画像たちをまとめて前処理する点に注意してください。
-    """
-
-    def __init__(self):
-        self.data_transform = torchvision.transforms.Compose([
-                # DataAugumentation()  # 今回は省略
-                #GroupResize(int(resize)),  # 画像をまとめてリサイズ　
-                #GroupCenterCrop(crop_size),  # 画像をまとめてセンタークロップ
-                GroupToTensor(),  # データをPyTorchのテンソルに
-                GroupImgNormalize(),  # データを標準化
-                Stack()  # 複数画像をframes次元で結合させる
-            ])
-
-    def __call__(self, img_group):
-        """
-        Parameters
-        ----------
-        phase : 'train' or 'val'
-            前処理のモードを指定。
-        """
-        return self.data_transform(img_group)
-
-class GroupImgNormalize():
-    ''' 画像をまとめて標準化するクラス。
-    '''
-
-    def __init__(self):
-        '''標準化する処理を用意'''
-        self.normlize = torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
-        
-
-    def __call__(self, img_group):
-        '''標準化をimg_group(リスト)内の各imgに実施'''
-        return [self.normlize(img) for img in img_group]
-
-class Stack():
-    ''' 画像を一つのテンソルにまとめるクラス。
-    '''
-
-    def __call__(self, img_group):
-        '''img_groupはtorch.Size([3, 256, 256])を要素とするリスト
-        '''
-        ret = torch.cat([x.unsqueeze(dim=0) for x in img_group], dim=0)  # frames次元で結合
-        # unsqueeze(dim=0)はあらたにframes用の次元を作成しています
-
-        return ret
     # @classmethod
     # def load_list(cls, root):
     #     # 顎骨正常データ取得と整形
@@ -332,251 +246,6 @@ class Stack():
 #
 #         return torch.abs(c_pred - c_true)
 
-def split_list(l, n):
-    for i in range(0, len(l), n):
-        yield l[i:i+n]
-
-
-def reshaped_data(data: [(str, float)], seq_len : int = 8):
-    """
-    data : list of (img_path, label)
-    """
-    
-    #print(x)
-    remainder = len(data) % seq_len
-
-    # データをランダムにシャッフル
-    #np.random.shuffle(data)
-
-    # 余りがある場合、データの最後から余りの分だけ削除
-    if remainder > 0:
-        data = data[:-remainder]
-
-    # reshape関数を使って分割
-    reshaped_data = [
-        data[i:i+seq_len] for i in range(0, len(data), seq_len)  
-    ]
-
-    return reshaped_data
-
-"""def Mean_Variance_loss(y_pred,y_class):
-    N = 4 #Number of classes
-    #y_true one-hot-encording
-    yt_one = np.zeros((len(y_class),N))
-    for i in range (len(y_class)):
-        yt_one[i][int(y_class[i])-1] = 1
-                
-    y_m = torch.zeros(len(y_class),device = device,dtype = torch.float32) 
-    y_v = torch.zeros(len(y_class),device = device,dtype = torch.float32)
-    y_pred_soft = torch.nn.functional.softmax(y_pred,dim=1)
-    for i in range (len(y_pred_soft)):
-        for j in range (1,N+1): # class label
-            y_m[i] += j * y_pred_soft[i][j-1] # Eq.2
-        for j in range (1,N+1): # class label
-            y_v[i] += y_pred_soft[i][j-1] * pow(j-y_m[i],2) # Eq.3
-                
-    loss_mean = torch.zeros(len(y_class),device = device,dtype = torch.float32 ,requires_grad=False)
-    for i in range (len(y_class)):
-        for j in range(1,N+1):
-            if(yt_one[i][j-1] == 1):
-                loss_mean[i] = pow(y_m[i]-j,2) # Calculate mean loss Eq.4
-    loss_s_tensor = torch.zeros(len(y_class),device = device,dtype = torch.float32 ,requires_grad=False)
-                
-    #Caliculate Softmax Loss Eq.6
-    for i in range (len(y_class)):
-        for j in range(N):
-            if(yt_one[i][j] == 1):
-                if(-1 * torch.log(y_pred[i][j]).item() == math.inf):
-                    print(1)
-                    loss_s_tensor[i] = torch.log(y_pred[i][j]+1.0E-8)
-                else:
-                    loss_s_tensor[i] = torch.log(y_pred[i][j])
-                loss_s_tensor[i] = y_pred[i][j]
-                
-    #Type transformation numpy to tensor
-    loss_m = torch.mean(loss_mean)/2.0
-    loss_v = torch.mean(y_v)  # Calculate variance loss Eq.5
-    loss_s = torch.mean(torch.nn.functional.log_softmax(loss_s_tensor,dim=0))
-    lamda1 = 0.2
-    lamda2 = 0.05
-    loss = -1.0 * loss_s + lamda1 * loss_m + lamda2 * loss_v
-            
-    return loss"""
-
-# Extracter + TransformerEncoder
-class ExtTrans(torch.nn.Module):
-    def __init__(self,ext ,est ,PE):
-        super().__init__()
-        self.ext = ext
-        self.est = est
-        self.PE = PE
-        self.flatten = nn.Flatten()
-        self.network = net = nn.Sequential(
-        nn.Linear(8*128, 8*64, bias=True),
-        nn.BatchNorm1d(8*64),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(8*64, 8*8, bias=True),
-        nn.BatchNorm1d(8*8),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(8*8, 4, bias=True),
-        )
-    def forward(self, sort_features_list,sort_clusters_list):
-        #x = self.ext(x)
-        #sort_features,sort_clusters = features_sort(x)
-        x = self.PE(sort_features_list,sort_clusters_list).to(device)
-        #print(x.shape)
-        x = self.est(x)
-        #x = self.flatten(x)
-        #x = self.network(x)
-        #print(x.shape)
-        return x
-
-"""#common positional encording
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, dropout: float = 0.5, max_len: int = 5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        
-        #Args:
-        #    x: Tensor, shape [seq_len, batch_size, embedding_dim]
-        
-        #print(x.shape)
-        #print(self.pe.shape)
-        x = x + self.pe[:x.size(0)]
-        return self.dropout(x)
-
-"""
-
-# Clustering PE
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, d_model: int, dropout: float = 0.1):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        self.d_model = d_model
-        self.div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        #self.register_buffer('pe', pe)
-
-    def forward(self, x,sort_clusters_list):
-        
-        #Args:
-        #    x: Tensor, shape [batch_size, seq_len, embedding_dim]
-        
-        #batch_size = self.batch_size
-        #print(len(sort_clusters_list[0]))
-        pe = torch.zeros(1,len(sort_clusters_list[0]) , self.d_model).to(device)
-        
-        for i, position in enumerate(sort_clusters_list):
-            for j in range(len(position)):
-                pe[0, j, 0::2] = torch.sin(position[j] * self.div_term)
-                pe[0, j, 1::2] = torch.cos(position[j] * self.div_term)
-            x[i] = x[i]*math.sqrt(self.d_model) + pe[:x.size(1)]
-            
-            #print(a)
-        #print(x.shape)
-        
-        return self.dropout(x)
-    
-"""        
-# 2 dimention PE
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, d_model: int, dropout: float = 0.1, ):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        self.d_model = d_model
-        self.div_term = torch.exp(torch.arange(0,d_model, 2).float() * (-math.log(10000.0) / d_model))
-        
-
-    def forward(self, x,cluster):
-        
-        #Args:
-        #    x: Tensor, shape [seq_len, embedding_dim]
-        
-        #claster = torch.tensor(claster)
-        
-        position = cluster.unsqueeze(1)
-        pe = torch.zeros_like(x)
-        pe[:, 0::2] = torch.sin(position * self.div_term)
-        pe[:, 1::2] = torch.cos(position * self.div_term)
-        x = x*math.sqrt(self.d_model) + pe[:x.size(0)]
-        return self.dropout(x)
-"""
-class TransformerModel(nn.Module):
-
-    def __init__(self, d_model: int, nhead: int, d_hid: int, 
-                    nlayers: int, dropout: float = 0.5):
-        super().__init__()
-        self.model_type = 'Transformer'
-        #self.pos_encoder = PositionalEncoding(claster, d_model, dropout)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, d_hid, dropout,batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
-        #self.encoder = nn.Embedding(ntoken, d_model)
-        self.d_model = d_model
-        
-
-        #self.init_weights()
-
-    def init_weights(self) -> None:
-        initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        
-
-    def forward(self, src):
-        """
-        Args:
-            src: Transformerへの入力データ
-        Returns:
-            Transformerの出力
-        """
-        
-        #src = self.pos_encoder(src,claster)
-        output = self.transformer_encoder(src)
-        
-        return output
-
-def features_sort(features):
-    """# データのリンケージ行列を計算
-    # 距離行列を計算
-    features_np = features.cpu().detach().numpy()
-    #distances = np.linalg.norm(features_np[:, None, :] - features_np[None, :, :], axis=-1)
-
-    # linkage行列を計算
-    linkage_matrix = linkage(features_np, method='ward')
-    num_clusters = 3  # 任意のクラスタ数を指定
-    clusters = fcluster(linkage_matrix, num_clusters, criterion='maxclust')
-
-    # 各データポイントに対するクラスタ番号の表示
-    #print("クラスタ番号:", clusters)
-    #linked = linkage(features.cpu().detach().numpy(), 'ward')
-    # デンドログラムのプロット
-    #fig = plt.figure()
-    #dendrogram(linkage_matrix)
-
-    # プロットの設定
-    #plt.title('Hierarchical Clustering Dendrogram')
-    #plt.xlabel('Data Point Index')
-    #plt.ylabel('Distance')
-    #plt.show()
-    #fig.savefig('linkage_matrix.png')"""
-
-    clusters = KMeans(n_clusters = 4,n_init='auto').fit(features.cpu().detach().numpy())
-    sort_clusters, sort_clusters_index = torch.sort(torch.tensor(clusters.labels_),dim=0)
-    #sort_clusters_index = sort_clusters_index.to(device)
-    sort_features = features[sort_clusters_index]
-    return sort_features, sort_clusters
-    #return features, clsuters.labels_
 
 def create_dataset(
         src: Path, dst: Path,
@@ -656,6 +325,7 @@ def main():
     # Create dataset if not exists
     """if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)"""
+    
     # Existing subjects are ignored in the function
     create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
@@ -677,7 +347,7 @@ def main():
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
     epochs = 1000
-    batch_size = 16     # 64 requires 19 GiB VRAM
+    batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 4   # For SMT
     # Load train/valid yaml
     '''with open(src / "survival_time.yml", "r") as f:
@@ -726,57 +396,50 @@ def main():
         num_workers=num_workers
     )
     """
-    '''iterator = iter(train_loader)
-    x, _ = next(iterator)
-    imshow(x)'''
-    '''
-    モデルの構築
-    '''
-    '''iterator = iter(train_loader)
-    x, _ = next(iterator)
-    imshow(x)'''
-    '''
-    モデルの構築
-    '''
-    z_dim = 512
-    #net = UNet_2D().to(device)
-    #net = create_model()
+    #AE
+    net = create_model() 
     
-    """
-    # contrastive
-    train_config = Hparams()
-    ext = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
-    
-    ext.model.projection = nn.Sequential(
-    #net.fc = nn.Sequential( 
-    #net.dec = nn.Sequential(
+    net.load_state_dict(torch.load(
+        #road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
+        road_root / "20230928_160620" /'20230928_160625model00166.pth', map_location=device) #AE                                
+    )
+
+    net.dec = nn.Sequential( #AE
         nn.Linear(512, 512, bias=True),
         nn.BatchNorm1d(512),
         nn.ReLU(),
         nn.Dropout(0.5),
         nn.Linear(512, 512, bias=True),
+        nn.BatchNorm1d(512),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(512, 4, bias=True),
+    )
+
+    # contrastive
+    """train_config = Hparams()
+    net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
+    
+    net.model.projection = nn.Sequential(
+    #net.fc = nn.Sequential( 
+    #net.dec = nn.Sequential(
+        nn.Linear(512, 512, bias=True),
+        #nn.BatchNorm1d(512),
+        nn.ReLU(),
+        #nn.Dropout(0.5),
+        nn.Linear(512, 512, bias=True),
     )
     
-    ext.load_state_dict(torch.load(
-        #road_root / "20221220_184624" /'', map_location=device) #p=1024,s=512,b=32
-        #road_root / "20230309_182905" /'model00520.pth', map_location=device) #f1 best
-        #road_root / "20230530_205222" /'20230530_205224model00020.pth', map_location=device) #U-net 
-        #road_root / "20230516_162742" /'model00020.pth', map_location=device) #U-net 
-        #road_root / "20230712_131831" /'20230712_131837model00140.pth', map_location=device)
-        #road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive
-        road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
-        #road_root / "20230725_173524" /'20230725_190953model00092.pth', map_location=device)
-        #road_root / "20230907_132454" /'model00014.pth', map_location=device) #Cox                                 
-    )"""
-    """
+    net.load_state_dict(torch.load(
+        road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive                                
+    )
+    
     #num_features = net.fc.in_features
     # print(num_features)  # 512
     #net.dec = nn.ReLU()
     #print(net.model.projection)
     
-    #net.model.projection = nn.Sequential(
-    net.fc = nn.Sequential( 
-    #net.dec = nn.Sequential(
+    net.model.projection = nn.Sequential( #CL
         nn.Linear(512, 512, bias=True),
         nn.BatchNorm1d(512),
         nn.ReLU(),
@@ -788,46 +451,10 @@ def main():
         nn.Linear(512, 4, bias=True),
     )"""
     
-    """net = nn.Sequential(
-        net,
-        nn.Sequential(
-        nn.Linear(512, 1024, bias=True),
-        nn.BatchNorm1d(1024),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(1024, 2048, bias=True),
-        nn.BatchNorm1d(2048),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(2048, 1024, bias=True),
-        nn.BatchNorm1d(1024),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(1024, 512, bias=True),
-        nn.BatchNorm1d(512),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(512, 4, bias=True),
-    )
-        #nn.Softmax(dim=1)
-        # nn.Sigmoid()
-    )"""
-    """
-    #for param in net.model.parameters():
-    for param in net.parameters():
-        param.requires_grad = False
-    #print(net.model.backbone.conv1.bias)
-    #last_layer = net.model.projection
-    last_layer = net.dec
-    #last_layer = list(net.children())[-1]
-    print(f'except last layer: {last_layer}')
-    for param in last_layer.parameters():
-        param.requires_grad = True
-    """
-    """
+    
     # ResNet
     
-    net = torchvision.models.resnet18(pretrained = True)
+    """net = torchvision.models.resnet18(pretrained = True)
     net.fc = nn.Sequential( 
         nn.Linear(512, 512, bias=True),
         nn.BatchNorm1d(512),
@@ -841,8 +468,9 @@ def main():
     )
     """
     
-    # Selfsupervised + Transformer
-    ext = create_model()
+    
+    #Selfsupervised + Transformer
+    """ext = create_model()
     # contrastive
     #train_config = Hparams()
     #ext = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
@@ -864,29 +492,6 @@ def main():
     for param in last_layer.parameters():
         param.requires_grad = True
 
-    """
-    #CL
-    ext.model.projection = nn.Sequential( 
-        nn.Linear(512, 512, bias=True),
-    )
-
-    for param in ext.model.parameters():
-    #for param in net.parameters():
-        param.requires_grad = False
-    #print(net.model.backbone.conv1.bias)
-    
-    last_layer = ext.model.projection
-    #last_layer = net.dec
-    #last_layer = list(net.children())[-1]
-    print(f'except last layer: {last_layer}')
-    for param in last_layer.parameters():
-        param.requires_grad = True"""
-
-    #ext = torchvision.models.resnet18(pretrained = True)
-    #ext.fc = nn.Linear(512,128, bias = True)
-    
-    #encoder_layer = nn.TransformerEncoderLayer(d_model=128, nhead=8)
-    #ext = net.to(device)
     ext = ext.to(device)
     
     model_name = "SelfAttention_4096_noExit"
@@ -901,48 +506,18 @@ def main():
     learning_rate = 0.001
     est = Attention(d_model, embed_dim, num_heads, num_layers, dropout=dropout_rate,
                       dff=dff, device=device).to(device)
-    """
-    emsize = 128  # 埋め込みベクトルの次元
-    d_hid = 512 # nn.TransformerEncoderのフィードフォワードネットワークの次元
-    nlayers = 6  # nn.TransformerEncoder内のnn.TransformerEncoderLayerの数
-    nhead = 8  # nn.MultiheadAttention内のヘッドの数
-    dropout = 0.2  # dropoutの割合
-    PE = PositionalEncoding(batch_size,emsize,dropout)
-    est = TransformerModel(emsize, nhead, d_hid, nlayers, dropout)"""
-
+    
     PE = PositionalEncoding(d_model,dropout_rate)
     net = ExtTrans(ext,est,PE)
+    """
+    
     net = net.to(device)
     
-    
-    """net = create_model().to(device)
-    num_features = 128
-    net = nn.Sequential(
-    net,
-    nn.Linear(128, 128, bias=True),
-    nn.BatchNorm1d(128),
-    nn.ReLU(),
-    nn.Dropout(0.5),
-    nn.Linear(128,128, bias=True),
-    nn.BatchNorm1d(128),
-    nn.ReLU(),
-    nn.Dropout(0.5),
-    nn.Linear(128, 4, bias=True),
-    )"""
-    
-    
-    #net = net.to(device)
-    #print(net)
-    # net = torch.nn.DataParallel(net).to(device)
+
     #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
     #optimizer_ext = torch.optim.RAdam(ext.parameters(), lr=0.0001)
     optimizer = torch.optim.RAdam(net.parameters(), lr=0.001)
 
-
-    # criterion = nn.CrossEntropyLoss()
-    # criterion = nn.BCELoss()
-
-    #criterion = nn.MSELoss()
     LAMBDA_1 = 0.2
     #LAMBDA_1 = 1.
     LAMBDA_2 = 0.05
@@ -950,7 +525,6 @@ def main():
     START_AGE = 0
     END_AGE = 3
     VALIDATION_RATE= 0.1
-    
     
     criterion1 = MeanVarianceLoss(LAMBDA_1, LAMBDA_2, START_AGE, END_AGE)
     #criterion2 = nn.CrossEntropyLoss() #hard label
@@ -962,7 +536,7 @@ def main():
     print(net)
 
     seq_len = 8
-
+    num_classes = 4
 
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
@@ -978,9 +552,9 @@ def main():
         for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
             x, y_true,soft_labels,y_class = x.to(device), y_true.to(device) ,soft_labels.to(device),y_class.to(device)
-            print(y_true)
-            # テンソルを格納するリスト
-            #feature_list = []
+            
+            """
+            #Transformer
             sort_features_list = []
             sort_clusters_list = []
             for i in range(len(x)):
@@ -992,24 +566,17 @@ def main():
                 sort_features_list.append(sort_features)
                 sort_clusters_list.append(sort_clusters)
             combined_feature = torch.stack(sort_features_list,dim=0)
-            #print(combined_feature.shape)
-            #combined_feature = torch.reshape(combined_feature,(batch_size,seq_len,d_model))
-            #print(combined_feature.shape)  
             
             y_pred = net(combined_feature,sort_clusters_list)   # Forward
-            #y_pred = net(combined_feature)   # Forward
-            #print(y_pred.shape)
-            #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
+            """
+            y_pred = net(x)
 
-            mean_loss, variance_loss = criterion1(y_pred, y_class,device)
+            mean_loss, variance_loss = criterion1(y_pred, y_class, device)
             
-            #softlabel
-            soft_labels = hard_to_soft_labels(y_class,4).to(device)
+            #soft label
             #print(soft_labels)
-            #soft_labels = create_softlabel(y_true,4).to(device)
             softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
-            #print(torch.log_softmax(y_pred, dim=1))
-            #print('')
+            
             #hard label
             #softmax_loss = criterion2(y_pred, y_class)
             #print(softmax_loss)
@@ -1079,8 +646,8 @@ def main():
             valid_index = 0.
             for batch, (x, soft_labels, y_true,y_class) in enumerate(valid_loader):
                 x, y_true, soft_labels, y_class = x.to(device), y_true.to(device) ,soft_labels.to(device), y_class.to(device)
-                # テンソルを格納するリスト
-                #feature_list = []
+                #Transformer
+                """# テンソルを格納するリスト
                 sort_features_list = []
                 sort_clusters_list = []
                 for i in range(len(x)):
@@ -1093,19 +660,17 @@ def main():
                 combined_feature = torch.cat(sort_features_list)
                 combined_feature = torch.reshape(combined_feature,(batch_size,8,d_model))
                 #print(combined_feature.shape)  
-            
                 y_pred = net(combined_feature,sort_clusters_list)   # Forward
                 #y_pred = net(combined_feature)   # Forward
-                
-                #y_pred = net(x)  # Prediction
+                """
+
+                y_pred = net(x)  # Prediction
                 #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
                 mean_loss, variance_loss = criterion1(y_pred, y_class,device)
                 
-                #softlabel
-                soft_labels = hard_to_soft_labels(y_class,4).to(device)
-                #soft_labels = create_softlabel(y_true,4).to(device)
+                #soft label
                 softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
-                
+
                 #hard label
                 #softmax_loss = criterion2(y_pred, y_class)
                 

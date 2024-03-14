@@ -48,10 +48,9 @@ class PatchDataset(torch.utils.data.Dataset):
         else:
             self.__dataset += random.sample(self.paths,flag)
         #self.__dataset += random.sample(self.paths,len(self.paths))
-        ]
+        
 
         # Random shuffle
-        random.shuffle(self.__dataset)
         random.shuffle(self.__dataset)
         # reduce_pathces = True
         # if reduce_pathces is True:
@@ -63,26 +62,7 @@ class PatchDataset(torch.utils.data.Dataset):
         self.__num_class = 2
         # self.__dataset = self.__dataset[:512]
 
-        print('PatchDataset')
-        print('  # patch :', len(self.__dataset))
-        print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
-        print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
-        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
 
-        '''self.paths = []
-        for subject in subjects:
-            print(subject)
-            path = []
-            path += list((root / subject).iterdir())
-            if(subject == "57-10" or subject == "57-11"):
-                self.paths += random.sample(path,4000)
-            elif(subject == "38-4" or subject == "38-5"):
-                self.paths += random.sample(path,len(path))
-            elif(len(path) < 2000):
-                self.paths += random.sample(path,len(path))
-            else:
-                self.paths+= random.sample(path,2000)
-            self.paths += list((root / subject).iterdir())'''
         #print(self.paths[0])
         print(len(self.__dataset))
     
@@ -90,7 +70,6 @@ class PatchDataset(torch.utils.data.Dataset):
         return len(self.__dataset)
     
     def __getitem__(self, item):
-    def __getitem__(self, root,item):
         """
         :param item:    Index of item
         :return:        Return tuple of (image, label)
@@ -106,24 +85,16 @@ class PatchDataset(torch.utils.data.Dataset):
             true_class[1] = 1.0
         else:
             true_class[0] = 1.0
-        """self.__num_class = 2
+        self.__num_class = 2
         # self.__dataset = self.__dataset[:512]
 
         print('PatchDataset')
         print('  # patch :', len(self.__dataset))
-        print('  # of 0  :', len([if(class == 0)]))
-        print('  # of 1  :', len([if(class == 1)]))
-        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))"""
-        if("no" in str(root)):
-            class = 1
-        else:
-            class = 0
-        # Tensor
-        #true_class = torch.tensor(true_class, dtype=torch.float)
+        print('  # of 0  :', len([if(true_class[0] == 1.0)]))
+        print('  # of 1  :', len([if(true_class[1] == 1.0)]))
+        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
+        
         return img, true_class
-    
-        label = torch.tensor(label, dtype=torch.float)
-        return img, class
     
     # @classmethod
     # def load_list(cls, root):
@@ -414,21 +385,12 @@ def main():
 
         # Calculate validation metrics
         with torch.no_grad():
-            for i, (x, y_true) in enumerate(valid_loader):
             valid_loss=0.
-            for batch, (x,class) in enumerate(valid_loader):
+            for batch, (x,y_true) in enumerate(valid_loader):
                 x = x.to(device)
                 y_pred = net(x)  # Prediction
-                loss = criterion(y_pred,class)
+                loss = criterion(y_pred,y_true)
                 # Logging
-                metrics['valid']['loss'] += loss.item() / len(valid_loader)
-                # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
-            """for x, y_true in train_loader:
-                x, y_true = x.to(device), y_true.to(device)
-                y_pred = net(x)  # Prediction
-
-                loss = criterion(y_pred, y_true)  # Calculate validation loss
-                # print(loss.item())
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
                 metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
 

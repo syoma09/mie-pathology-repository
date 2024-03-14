@@ -17,13 +17,12 @@ class SVS(object):
             annotation=None,
             # cache: Path = Path("~/data/_cache/mie-pathology/").expanduser()
     ):
-        
         if not path.suffix == ".svs":
             raise IOError("*.svs file is required by SVS()")
 
         print("SVS() load image from     :", path)
         self.image = SVSImage(path)
-        #print(annotation)
+
         if annotation is None:
             # print(path.parent / (path.stem + ".xml"))
             annotation = path.parent / (path.stem + ".xml")
@@ -248,7 +247,7 @@ def save_patches(
     :param region:      Numerical index of region in the annotation
     :return:        None
     """
-    print(index)
+
     svs = SVS(
         path_svs,
         annotation=path_xml
@@ -256,7 +255,7 @@ def save_patches(
     patch_list = pd.DataFrame(
         columns=("x", "y", "width", "height", "path")
     )
-    
+
     for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
         patch_path = str(base) + f"{i:08}img.png"
         # if Path(patch_path).exists():
