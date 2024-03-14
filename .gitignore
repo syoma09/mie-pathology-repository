@@ -3,6 +3,7 @@ venv10/
 *.pyc
 
 .idea/
+*.code-workspace
 logs/
 pngfile/
 events.out.tfevents.*

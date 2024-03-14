@@ -19,7 +19,7 @@ from joblib import Parallel, delayed
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from cnn.metrics import ConfusionMatrix
-from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
 from GMM import MDN, mdn_loss
 import pytorch_ssim

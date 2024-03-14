@@ -19,7 +19,7 @@ from PIL import ImageFile
 from joblib import Parallel, delayed
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
-from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
 
 # To avoid "OSError: image file is truncated"
@@ -387,7 +387,7 @@ class Hparams:
         self.batch_size = 32
         self.lr = 3e-4 # for ADAm only
         self.weight_decay = 1e-6
-        self.embedding_size= 128 # papers value is 128
+        self.embedding_size= 512 # papers value is 128
         self.temperature = 0.5 # 0.1 or 0.5
         self.checkpoint_path = './SimCLR_ResNet18.ckpt' # replace checkpoint path here
 

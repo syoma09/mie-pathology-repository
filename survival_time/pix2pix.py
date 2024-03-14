@@ -21,7 +21,7 @@ from PIL import ImageFile
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from collections import OrderedDict
-from function import load_annotation, get_dataset_root_path
+from dataset_path import load_annotation, get_dataset_root_path
 from data.svs import save_patches
 
 # To avoid "OSError: image file is truncated"
