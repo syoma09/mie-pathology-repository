@@ -1,6 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 from matplotlib import pyplot as plt
 from sklearn.mixture import GaussianMixture
-from VAE import VAE,PatchDataset
+from VAE import VAE, PatchDataset
 import os
 import datetime
 from pathlib import Path
@@ -133,8 +136,6 @@ def main():
         for i in range(1,len(list_vector)):
             np_vector = np.vstack((np_vector,list_vector[i]))
         classtaling(np.array(np_vector))
-            
-        
 
 if __name__ == "__main__":
     main()

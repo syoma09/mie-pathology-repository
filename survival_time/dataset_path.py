@@ -2,15 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import os
-import random
 from pathlib import Path
 
 import pandas as pd
-import torch
-import torch.nn as nn
-import torch.utils.data
-import torchvision
-from PIL import Image, ImageOps
+
 
 
 def get_dataset_root_path(patch_size, stride, index):
@@ -58,13 +53,14 @@ def load_annotation(path: Path):
     }
 
     for _, row in pd.read_csv(path).iterrows():
-
         annotation[
             # Switch train/valid by tvt-column value (0: train, 1: valid)
             ['train', 'valid', 'test', 'IGNORE'][int(row['tvt'])]
-            #].append((row['number'], row['OS']))     # Append annotation tuple
-            ].append((row['number'], row['survival time']))     # Append annotation tuple
-            #].append((row['number'], row['survival time'], row['OS']))
-        #].append((row['number']))
+        ].append(
+            # (row['number'], row['OS'])              # Append annotation tuple
+            (row['number'], row['survival time'])   # Append annotation tuple
+            # (row['number'], row['survival time'], row['OS'])
+            # (row['number'])
+        )
         
     return annotation

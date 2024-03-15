@@ -4,24 +4,21 @@
 import os
 import datetime
 from pathlib import Path
+import random
+
 import torch
 import torch.nn as nn
 import torch.utils.data
-import torchvision
-import yaml
-import math
-import numpy
-import random
-import pandas as pd
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
-from PIL import Image
-from PIL import ImageFile
-from joblib import Parallel, delayed
+import torchvision
+from PIL import Image, ImageFile
+
 from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from dataset_path import load_annotation, get_dataset_root_path
-from data.svs import save_patches
+
+from data.dataset import create_dataset
 
 
 # To avoid "OSError: image file is truncated"
@@ -286,47 +283,7 @@ def create_model():
 
     return net
 
-def create_dataset(
-        src: Path, dst: Path,
-        annotation: Path,
-        size, stride,
-        index: int = None, region: int = None
-):
-    # Lad annotation
-    df = pd.read_csv(annotation)
-    #print(df)
-    args = []
-    for _, subject in df.iterrows():
-        number = subject['number']
-        subject_dir = dst / str(number)
-        if not subject_dir.exists():
-            subject_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            print(f"Subject #{number} already exists. Skip.")
-            continue
-        
-        path_svs = src / f"{number}.svs"
-        path_xml = src / f"{number}.xml"
-        if not path_svs.exists() or not path_xml.exists():
-            print(f"{path_svs} or {path_xml} do not exists.")
-            continue
 
-        base = subject_dir / 'patch'
-        resize = 256, 256
-        args.append((path_svs, path_xml, base, size, stride, resize))
-        # # Serial execution
-        # save_patches(path_svs, path_xml, base, size=size, stride=stride)
-
-    # Approx., 1 thread use 20GB
-    # n_jobs = int(mem_total / 20)
-    n_jobs = 8
-    print(f'Process in {n_jobs} threads.')
-    # Parallel execution
-    Parallel(n_jobs=n_jobs)([
-        delayed(save_patches)(path_svs, path_xml, base, size, stride, resize, index, region)
-        for path_svs, path_xml, base, size, stride, resize in args
-    ])
-    #print('args',args)
 
 def main():
     patch_size = 512, 512
@@ -334,7 +291,8 @@ def main():
     # patch_size = 256, 256
     dataset_root = get_dataset_root_path(
         patch_size=patch_size,
-        stride=stride
+        stride=stride,
+        index=1     # ToDo: Any value is ok?
     )
     
     # Log, epoch-model output directory
@@ -365,9 +323,10 @@ def main():
     epochs = 10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
-    '''# Load train/valid yaml
-    with open(src / "survival_time.yml", "r") as f:
-        yml = yaml.safe_load(f)'''
+    # # Load train/valid yaml
+    # with open(src / "survival_time.yml", "r") as f:
+    #     yml = yaml.safe_load(f)
+
 
     # print("PatchDataset")
     # d = PatchDataset(root, yml['train'])
