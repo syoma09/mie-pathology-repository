@@ -44,3 +44,42 @@ $ sudo apt install -y libopenslide-dev
 ```shell-session
 $ pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 ```
+
+### Refactoring
+**コードは一部ロールバックしてるかも… 論文の方が正確**
+
+- データは今セットしてあるCSVでOK
+- Base model
+    - AutoEncoder.py動かす：3-4days
+        - だけ
+    - contrastive_learning.py動かす:  2days /100epoch ぐらい
+        - SupCon（Loss）はうまくいかなかったので使ってない
+        - NCE+CEだけでやったから、Lossは変更不要
+- Class分類モデル（train_time.py　動かす）：各2days
+    - 学習のループないで、Hard/Softの切り替え（コメント１行入れ替えるだけ）、
+    +ロスの切り替えはCE,SoftはKL-Divにコメントで切り替え（学習ループ前）、それぞれ関数あり
+    - PatchDatasetでSoftの種類を切り替え
+    - AutoEncode/CLの切り替え：L399ぐらいからがAE、L419-454ぐらいまでがCL
+    - ResNetでシンプルくらす分類：L455ぐらいから-L467ぐらいまで
+        - ResNetの時はPatchDtaasetのTransofrm,で、Reisze, Normalizeも有効化する
+    - Transformer
+        - L471ぐらいから
+        - CLはやってないから、虫でも良い
+        - AE: L482-
+        - PatchDataset.__init__()
+            - L60ぐらいから→ CNN
+            - L67ぐらいからL70 →　Transformer
+        - 画像まとめるやす（PatchDataset.__Getitem__）
+            - L145: CNN
+            - L150: Transformer
+            - Returnも切り替える！！
+    - 評価
+        - graph-plot.py: Logのパス変える
+            - AE, CLそのもの、train_time…
+        - 正解値 vs. 推定値のプロット（plot_predvstrue.py）
+            - train_timeで学習したモデルのpthのパスを切り替える。 L229前後
+            - その前のモデルの定義も変える
+            - **load_state_dictからload_modelに帰れるようにする？？？**
+        - plot_hist.py
+            - 推定生存期間のHistogramを作る
+            - Modelと学習済みパラメータの切り替えがひつよう。
