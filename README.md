@@ -50,9 +50,9 @@ $ pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stab
 
 - データは今セットしてあるCSVでOK
 - Base model
-    - AutoEncoder.py動かす：3-4days
+    - AutoEncoder.py -> baseAE.py 動かす：3-4days
         - だけ
-    - contrastive_learning.py動かす:  2days /100epoch ぐらい
+    - contrastive_learning.py -> baseCL.py 動かす:  2days /100epoch ぐらい
         - SupCon（Loss）はうまくいかなかったので使ってない
         - NCE+CEだけでやったから、Lossは変更不要
 - Class分類モデル（train_time.py　動かす）：各2days

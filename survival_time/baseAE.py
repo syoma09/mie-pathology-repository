@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import datetime
 from pathlib import Path
@@ -27,13 +30,15 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
+
+
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, annotations):
         super(PatchDataset, self).__init__()
         self.transform = torchvision.transforms.Compose([
             # torchvision.transforms.Resize((224, 224)),
             torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+            torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
         self.__dataset = []
         for subject, label in annotations:
@@ -41,9 +46,6 @@ class PatchDataset(torch.utils.data.Dataset):
                 (path, label)   # Same label for one subject
                 for path in (root / subject).iterdir()
         ]
-
-
-
 
         # Random shuffle
         random.shuffle(self.__dataset)
@@ -446,7 +448,7 @@ def main():
         }
         # Calculate validation metrics
         with torch.no_grad():
-            valid_loss=0.
+            # valid_loss = 0.
             for batch, (x, y_true) in enumerate(valid_loader):
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
@@ -475,5 +477,7 @@ def main():
         tensorboard.add_scalar('valid_loss', metrics['valid']['loss'], epoch)
         # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
+
+
 if __name__ == '__main__':
     main()
