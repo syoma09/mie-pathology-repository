@@ -13,7 +13,7 @@ from torch.backends import cudnn
 from sklearn.metrics import roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
 
-from cnn.metrics import ConfusionMatrix
+from aipatho.metrics import ConfusionMatrix
 from survival import load_annotation, get_dataset_root_path, PatchDataset, create_model
 
 

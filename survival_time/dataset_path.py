@@ -8,25 +8,6 @@ import pandas as pd
 
 
 
-def get_dataset_root_path(patch_size, stride, index):
-    """
-    :return:    Dataset root Path() object
-    """
-
-    # # Home directory
-    # return Path("~/data/_out/mie-pathology/").expanduser()
-
-    # Local SSD Cache
-    path = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
-    path /= "survival_p{}_s{}_i{}".format(
-        f"{patch_size[0]}x{patch_size[1]}",
-        f"{stride[0]}x{stride[1]}",
-        f"{index}"
-    )
-
-    return path
-
-
 def get_dataset_root_not_path(patch_size, stride, index):
     """
     :return:    Dataset root Path() object

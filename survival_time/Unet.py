@@ -5,16 +5,13 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 import torchvision
-import math
-import numpy
-import random
+
 import pandas as pd
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
 from joblib import Parallel, delayed
-from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from dataset_path import load_annotation, get_dataset_root_path
 from data.svs import save_patches
@@ -486,10 +483,8 @@ def main():
         metrics = {
             'train': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }, 'valid': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }
         }
         # Calculate validation metrics
@@ -501,12 +496,11 @@ def main():
                 loss = criterion(y_pred,x)
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
-                # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
             """for x, y_true in train_loader:
                 x, y_true = x.to(device), y_true.to(device)
                 y_pred = net(x)  # Prediction
                 metrics['train']['loss'] += criterion(y_pred, y_true).item() / len(train_loader)
-                # metrics['train']['cmat'] += ConfusionMatrix(y_pred, y_true)"""
+                """
         # # Console write
         # print("    train loss: {:3.3}".format(metrics['train']['loss']))
         # print("          acc : {:3.3}".format(metrics['train']['cmat'].accuracy()))

@@ -3,6 +3,8 @@
 
 import torch.utils.data
 
+from aipatho.utils.directory import get_logdir
+
 
 def to1hot(cls, num):
     """

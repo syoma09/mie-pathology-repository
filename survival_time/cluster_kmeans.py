@@ -18,7 +18,6 @@ from PIL import Image
 from PIL import ImageFile
 from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from contrastive_learning import Hparams,SimCLR_pl,AddProjection
-from cnn.metrics import ConfusionMatrix
 from AutoEncoder import create_model
 from sklearn.manifold import TSNE
 

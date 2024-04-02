@@ -21,7 +21,6 @@ from joblib import Parallel, delayed
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
-from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from sklearn.cluster import KMeans
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
@@ -29,7 +28,7 @@ from collections import OrderedDict
 from lifelines.utils import concordance_index
 from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
-from AgeEstimation.mean_variance_loss import MeanVarianceLoss
+from aipatho.metrics import MeanVarianceLoss
 from VAE import VAE
 from Unet import Generator
 from contrastive_learning import Hparams,SimCLR_pl,AddProjection
@@ -630,10 +629,8 @@ def main():
         metrics = {
             'train': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }, 'valid': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }
         }
         # Calculate validation metrics
@@ -690,7 +687,6 @@ def main():
                 variance_loss_val += variance_loss / len(valid_loader)
                 softmax_loss_val += softmax_loss / len(valid_loader)
                 valid_index += index / len(valid_loader)
-                # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
                 #print("\r  Validating... ({:6}/{:6})[{}]".format(
                 print("\r  Batch({:6}/{:6})[{}]: loss={:.4} loss_s={:.4} loss_m={:.4} loss_v={:.4}".format(
                 #print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(

@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.svs import SVS
+from aipatho.svs import SVS
 
 
 def main():
-    src = Path("~/workspace/mie-pathology/_data/").expanduser()
+    src = Path("~/workspace/mie/pathology/_data/").expanduser()
 
     df = pd.read_csv(src / "survival_2dfs_v2.csv")
     print(df)

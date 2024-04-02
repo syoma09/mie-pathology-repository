@@ -18,7 +18,6 @@ from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
 
-from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from collections import OrderedDict
 from dataset_path import load_annotation, get_dataset_root_path

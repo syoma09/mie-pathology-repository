@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
-from cnn.metrics import ConfusionMatrix
+from aipatho.metrics import ConfusionMatrix
 from scipy.special import softmax
 
 # To avoid "OSError: image file is truncated"

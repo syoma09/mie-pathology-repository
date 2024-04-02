@@ -16,9 +16,6 @@ from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
 from joblib import Parallel, delayed
-from cnn.metrics import ConfusionMatrix
-from scipy.special import softmax
-from cnn.metrics import ConfusionMatrix
 from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
 from GMM import MDN, mdn_loss
@@ -411,10 +408,8 @@ def main():
     metrics = {
         'train': {
             'loss': 0.,
-            'cmat': ConfusionMatrix(None, None)
         }, 'valid': {
             'loss': 0.,
-            'cmat': ConfusionMatrix(None, None)
         }
     }
 
@@ -447,8 +442,6 @@ def main():
         train_mse += loss1.item() / len(train_loader)
         train_ssim += loss2.item() / len(train_loader)
         train_mdn += loss3.item() / len(train_loader)
-        # metrics['train']['cmat'] += ConfusionMatrix(
-        #    y_pred.cpu(), y_true.cpu())
         # Screen output
         print("\r  Batch({:6}/{:6})[{}]: loss={:.4} r_loss={:4} kl_loss={:4}".format(
         #print("\r  Batch({:6}/{:6})[{}]: loss={:.4}".format(    
@@ -486,8 +479,7 @@ def main():
                 valid_mse += loss1.item() / len(valid_loader)
                 valid_ssim += loss2.item() / len(valid_loader)
                 valid_mdn += loss3.item() / len(valid_loader)
-                #metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
-                
+
                 print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4} loss1={:4} loss2={:4} loss3={:4}".format(
                 #print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4}".format(
                     i, len(valid_loader),
