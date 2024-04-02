@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from PIL import ImageDraw, Image
 
-from data.svs import SVS
+from aipatho.svs import SVS
 
 
 def save_thumbnail(svs: SVS, hmap: Image, path, index: int = None, region: int = None):

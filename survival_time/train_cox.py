@@ -18,14 +18,13 @@ from joblib import Parallel, delayed
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
-from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from collections import OrderedDict
 from lifelines.utils import concordance_index
 from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
-from AgeEstimation.mean_variance_loss import MeanVarianceLoss
-from contrastive_learning import Hparams,SimCLR_pl,AddProjection
+from aipatho.metrics import MeanVarianceLoss
+from contrastive_learning import Hparams,SimCLR_pl, AddProjection
 
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -475,10 +474,8 @@ def main():
         metrics = {
             'train': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }, 'valid': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }
         }
         # Calculate validation metrics

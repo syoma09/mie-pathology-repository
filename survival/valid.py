@@ -10,7 +10,7 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 
-from cnn.metrics import ConfusionMatrix
+from aipatho.metrics import ConfusionMatrix
 from survival import load_annotation, PatchDataset, create_model, get_dataset_root_path
 
 

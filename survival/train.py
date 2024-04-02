@@ -17,8 +17,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 from PIL import Image, ImageOps
 
-from cnn.metrics import ConfusionMatrix
-from data.svs import save_patches
+from aipatho.metrics import ConfusionMatrix
+from aipatho.svs import save_patches
 from survival import load_annotation, get_dataset_root_path, PatchDataset, create_model
 
 

@@ -4,6 +4,8 @@
 import numpy as np
 import torch
 
+from mean_variance import MeanVarianceLoss
+
 
 class ConfusionMatrix(object):
     """
@@ -121,14 +123,14 @@ class ConfusionMatrix(object):
 # class Accuracy(ConfusionMatrix):
 #     def __init__(self, y_pred, y_true):
 #         super().__init__(y_pred, y_true)
-# 
+#
 #     def item(self):
 #         return super().accuracy()
-# 
-# 
+#
+#
 # class F1(ConfusionMatrix):
 #     def __init__(self, y_pred, y_true):
 #         super().__init__(y_pred, y_true)
-# 
+#
 #     def item(self):
 #         return super().f1()

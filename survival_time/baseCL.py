@@ -17,7 +17,6 @@ from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
 from joblib import Parallel, delayed
-from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
 from data.svs import save_patches
@@ -550,10 +549,8 @@ def main():
         metrics = {
             'train': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }, 'valid': {
                 'loss': 0.,
-                'cmat': ConfusionMatrix(None, None)
             }
         }
         # Calculate validation metrics
@@ -590,7 +587,6 @@ def main():
                 loss = criterion(logits, torch.cat([labels,labels]).to(device))
                 # Logging
                 metrics['valid']['loss'] += loss.item() / len(valid_loader)
-                # metrics['valid']['cmat'] += ConfusionMatrix(y_pred, y_true)
                 print("\r  Validating... ({:6}/{:6})[{}]: loss={:.4}".format(
                     batch, len(valid_loader),
                     ('=' * (30 * batch // len(valid_loader)) + " " * 30)[:30],

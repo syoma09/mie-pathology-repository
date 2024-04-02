@@ -3,11 +3,10 @@
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from PIL import ImageDraw, Image
+from PIL import ImageDraw
 
-from data.svs import SVS
+from aipatho.svs import SVS
 
 
 def save_thumbnail(svs: SVS, path, index: int = None, region: int = None):

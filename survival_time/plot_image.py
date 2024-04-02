@@ -20,7 +20,6 @@ import numpy as np
 from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
-from cnn.metrics import ConfusionMatrix
 from scipy.stats import norm
 from function import load_annotation, get_dataset_root_path
 from VAE import VAE,PatchDataset
