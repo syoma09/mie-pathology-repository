@@ -18,7 +18,9 @@ from cnn.metrics import ConfusionMatrix
 from scipy.special import softmax
 from dataset_path import load_annotation, get_dataset_root_path
 
+from aipatho.svs import TumorMasking
 from data.dataset import create_dataset
+
 
 
 # To avoid "OSError: image file is truncated"
@@ -294,49 +296,39 @@ def main():
         stride=stride,
         index=1     # ToDo: Any value is ok?
     )
-    
-    # Log, epoch-model output directory
-    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_root.mkdir(parents=True, exist_ok=True)
-    annotation_path = Path(
-        "../_data/survival_time_cls/20220413_aut2.csv"
-    ).expanduser()
+    print(dataset_root)
     # Create dataset if not exists
     if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)
+
+
+    annotation_path = Path(
+        "_data/survival_time_cls/20220413_aut2.csv"
+    )
+
     # Existing subjects are ignored in the function
     create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
         dst=dataset_root,
         annotation=annotation_path,
         size=patch_size, stride=stride,
-        index=1, region=None
+        index=1, region=None,
+        target=TumorMasking.FULL
     )
     # Load annotations
     annotation = load_annotation(annotation_path)
-    # echo $HOME == ~
-    #src = Path("~/root/workspace/mie-pathology/_data/").expanduser()
-    # Write dataset on SSD (/mnt/cache/)
-    #dataset_root = Path("/mnt/cache").expanduser()/ os.environ.get('USER') / 'mie-pathology'
-    if not dataset_root.exists():
-        dataset_root.mkdir(parents=True, exist_ok=True)
-    epochs = 10000
+
+    # Log, epoch-model output directory
+    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_root.mkdir(parents=True, exist_ok=True)
+    epochs = 10_000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
     # # Load train/valid yaml
     # with open(src / "survival_time.yml", "r") as f:
     #     yml = yaml.safe_load(f)
 
-
-    # print("PatchDataset")
-    # d = PatchDataset(root, yml['train'])
-    # d = PatchDataset(root, yml['valid'])
-    # print(len(d))
-    #
-    # print("==PatchDataset")
-    # return
-
-    # データ読み込み
+    # Build data loader
     train_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['train']), batch_size=batch_size, shuffle=True,
         num_workers=num_workers
