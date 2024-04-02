@@ -49,6 +49,7 @@ class SVS(object):
     #
     #     return mask
 
+    # ToDo: No diff.
     def thumbnail(
             self,
             shape           # Max-shape of target image
@@ -86,6 +87,7 @@ class SVS(object):
 
         return mask
 
+    # ToDo: No diff.
     def patches(self, size=(256, 256), stride=(64, 64)):
         shape = self.image.slide.dimensions
 
@@ -93,6 +95,7 @@ class SVS(object):
             for i in range(0, shape[0], stride[0]):
                 yield (i, j), (i + size[0], j + size[1])
 
+    # ToDo: No diff.
     def crop_img(self, location, size):
         """
         :param location:    Left-upper position
@@ -117,6 +120,7 @@ class SVS(object):
 
         return np.array(mask, dtype='uint8') * 255
 
+    # ToDo: No diff.
     def extract_img_mask(self, location, size):
         return self.crop_img(location, size), self.crop_mask(location, size)
 
@@ -146,6 +150,8 @@ class SVS(object):
         else:
             #print(bgr)
             print('not maiking patch')
+
+
 class SVSImage(object):
     def __init__(self, path):
         self.slide = OpenSlide(str(path))
@@ -203,6 +209,8 @@ class SVSAnnotation(object):
         ]
 
 
+
+
 def save_patches(
         path_svs: Path, path_xml: Path,
         base: Path, dst: Path,   
@@ -214,12 +222,12 @@ def save_patches(
         :param path_svs:    Path to image svs
         :param path_xml:    Path to contour xml
         :param base:        Base string of output file name
+        :param dst          Path to dataset
         :param size:        Patch size
         :param stride:      Patch stride
         :param resize:      Resize extracted patch
         :param index:       Numerical index of annotation
         :param region:      Numerical index of region in the annotation
-        :param dst          Path to dataset
         :return:        None
         """
         print(index)
@@ -305,8 +313,7 @@ def save_patches(
             vertices=svs.annotation.vertices(index, region, zoom=1.0),
             zoom=1.0
         )
-        
- 
+
         for i, (p0, p1) in enumerate(svs.patches(size=size, stride=stride)):
             patch_path = str(base) + f"{i:08}img.png"
             if Path(patch_path).exists():
@@ -330,7 +337,6 @@ def save_patches(
                 elif np.sum(np.array(cropped_mask)) > 0:
                     # Ignore if the mask covers the patch region
                     continue
-                
             else:
                 if np.sum(np.array(cropped_mask)) < size[0] * size[1]:
                     # Ignore if the mask does not full-cover the patch region
@@ -345,14 +351,4 @@ def save_patches(
         if("not" in str(dst)):
             del svs, mask, mask_low
         else:
-            del svs, mask,
-
-
-
-
-
-
-
-
-
-
+            del svs, mask

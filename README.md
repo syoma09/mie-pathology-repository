@@ -45,8 +45,15 @@ $ sudo apt install -y libopenslide-dev
 $ pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 ```
 
-### Refactoring
+### Refactoring (survival_time)
 **コードは一部ロールバックしてるかも… 論文の方が正確**
+
+```shell
+$ cd survival_time
+$ PYTHONPATH=. python3 baseAE.py
+$ PYTHONPATH=. python3 baseCL.py
+$ PYTHONPATH=. python3 train_time.py
+```
 
 - データは今セットしてあるCSVでOK
 - Base model
