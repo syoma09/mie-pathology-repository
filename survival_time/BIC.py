@@ -1,29 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from matplotlib import pyplot as plt
-from sklearn.mixture import GaussianMixture
-from VAE import VAE, PatchDataset
 import os
 import datetime
 from pathlib import Path
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.data
-import torchvision
-import math
+
 import numpy as np
-import random
-import pandas as pd
-import torch_optimizer as optim
-from torch.utils.tensorboard import SummaryWriter
-from torch.backends import cudnn
-from PIL import Image
-from PIL import ImageFile
-from joblib import Parallel, delayed
-from scipy.special import softmax
+from matplotlib import pyplot as plt
+from sklearn.mixture import GaussianMixture
+import torch
+import torch.utils.data
+
 from function import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+from VAE import VAE, PatchDataset
 
 device = 'cuda:0'
 
@@ -56,6 +45,7 @@ def classtaling(X):
                     arrowprops=dict(facecolor='black', shrink=0.1))"""
         plt.legend()
         plt.savefig(f"./BIC_plot.png")
+
 
 def main():
     #patch_size = 512,512
