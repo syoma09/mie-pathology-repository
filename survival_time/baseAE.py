@@ -14,7 +14,8 @@ import torchvision
 from aipatho.svs import TumorMasking
 from aipatho.model import AutoEncoder2
 from aipatho.utils.directory import get_logdir, get_cache_dir
-from aipatho.dataset import PatchDataset, TimeToTime, load_annotation, create_dataset
+from aipatho.dataset import PatchDataset, load_annotation, create_dataset
+from aipatho.metrics.label import TimeToTime
 
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = 'cuda:0'
