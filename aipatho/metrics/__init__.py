@@ -4,7 +4,8 @@
 import numpy as np
 import torch
 
-from mean_variance import MeanVarianceLoss
+from aipatho.metrics.mean_variance import MeanVarianceLoss
+from aipatho.metrics.contrastive import ContrastiveLoss, InfoNCELoss, SupConLoss
 
 
 class ConfusionMatrix(object):

@@ -13,7 +13,8 @@ from PIL import Image
 from PIL import ImageFile
 from joblib import Parallel, delayed
 from scipy.special import softmax
-from dataset_path import load_annotation, get_dataset_root_path
+from dataset_path import get_dataset_root_path
+from aipatho.dataset import load_annotation
 from data.svs import save_patches
 
 

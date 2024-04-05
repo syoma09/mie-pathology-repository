@@ -20,11 +20,11 @@ from PIL import ImageFile
 
 from scipy.special import softmax
 from collections import OrderedDict
-from dataset_path import load_annotation, get_dataset_root_path
+from dataset_path import get_dataset_root_path
+from aipatho.dataset import load_annotation
 from data.svs import save_patches
 
-# To avoid "OSError: image file is truncated"
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = 'cuda:1'
 if torch.cuda.is_available():

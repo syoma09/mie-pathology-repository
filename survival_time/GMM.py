@@ -1,9 +1,8 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import torch
-import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 minibatch = 32
@@ -38,7 +37,6 @@ class MDN(nn.Module):
     functions to compute the log-likelihood of data according to a gaussian mixture model.
     All the computations are done with log because exp will lead to numerical underflow errors.
 '''
-
 def gaussian_probability(sigma, mu, target):
     """Returns the probability of `target` given MoG parameters `sigma` and `mu`.
 

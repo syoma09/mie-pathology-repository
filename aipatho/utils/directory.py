@@ -28,7 +28,7 @@ def get_cache_dir(patch: (int, int), stride: (int, int), target: TumorMasking) -
     path /= "survival_p{}_s{}_t{}".format(
         f"{patch[0]}x{patch[1]}",
         f"{stride[0]}x{stride[1]}",
-        f"{target}"
+        f"{int(target)}"
     )
 
     # Create dataset if not exists
