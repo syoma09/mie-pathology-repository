@@ -1,44 +1,32 @@
 import os
 import datetime
 from pathlib import Path
+import random
+
 import torch
 import torch.nn as nn
-import torch.distributions as dist
 import torch.utils.data
+from torch.utils.tensorboard import SummaryWriter
+from torch.backends import cudnn
 import torchvision
-import timm
-import math
-import random
 import numpy as np
 import pandas as pd
-import sys
-import itertools
-import matplotlib.pyplot as plt
-from AutoEncoder import create_model
-from models.attention import Attention
-from torch.utils.tensorboard import SummaryWriter
 from joblib import Parallel, delayed
-from torch.backends import cudnn
 from PIL import Image
-from PIL import ImageFile
-from scipy.special import softmax
-from sklearn.cluster import KMeans
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
-from collections import OrderedDict
+
+from AutoEncoder import create_model
 from lifelines.utils import concordance_index
-from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+from dataset_path import get_dataset_root_path, get_dataset_root_not_path
+from aipatho.dataset import load_annotation
 from data.svs import save_patches
 from aipatho.metrics import MeanVarianceLoss
-from VAE import VAE
-from Unet import Generator
-from contrastive_learning import Hparams,SimCLR_pl,AddProjection
-from transformer_model import ExtTrans, PositionalEncoding, TransformerModel, features_sort
 from create_soft_labels import estimate_value, create_softlabel_tight, hard_to_soft_labels, create_softlabel_survival_time_wise
-from three_dimention_dataloader import GroupToTensor, VideoTransform, GroupImgNormalize, Stack, split_list, reshaped_data
-from sklearn.manifold import TSNE
 
-# To avoid "OSError: image file is truncated"
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+from aipatho.svs import TumorMasking
+from aipatho.utils.directory import get_cache_dir
+
+# # To avoid "OSError: image file is truncated"
+# ImageFile.LOAD_TRUNCATED_IMAGES = True
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = 'cuda:0'
 if torch.cuda.is_available():
@@ -200,51 +188,6 @@ class PatchDataset(torch.utils.data.Dataset):
         return [Image.open(path).convert('RGB') for path in path_group] 
 
 
-    # @classmethod
-    # def load_list(cls, root):
-    #     # 顎骨正常データ取得と整形
-    #
-    #     with open(root, "rb") as f:
-    #         output = pickle.load(f)
-    #
-    #     return output
-    #
-    # @classmethod
-    # def load_torch(cls, _list):
-    #     output = torch.cat([_dict["data"].view(1, 3, 32, 32) for _dict in _list],
-    #                        dim=0)
-    #
-    #     return output
-    #
-    # @classmethod
-    # def load_necrosis(cls, root):
-    #     data = cls.load_list(root)
-    #     data = cls.load_torch(data)
-    #
-    #     return data
-
-# class WeightedProbLoss(nn.Module):
-#     def __init__(self, classes):
-#         super(WeightedProbLoss, self).__init__()
-#
-#         if isinstance(classes, int):
-#             classes = [i for i in range(classes)]
-#
-#         self.classes = torch.Tensor(classes).to(device)
-#
-#     def forward(self, pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
-#         """
-#
-#         :param pred:    Probabilities of each class
-#         :param true:    1-hot vector
-#         :return:
-#         """
-#
-#         c_pred = torch.sum(torch.mul(pred, self.classes))
-#         c_true = torch.argmax(true)
-#
-#         return torch.abs(c_pred - c_true)
-
 
 def create_dataset(
         src: Path, dst: Path,
@@ -297,16 +240,15 @@ def main():
     stride = 256,256
     index = 2
     # patch_size = 256, 256
-    dataset_root = get_dataset_root_path(
-        patch_size=patch_size,
+    dataset_root = get_cache_dir(
+        patch=patch_size,
         stride=stride,
-        index = index
+        target=TumorMasking.FULL
     )
-
-    dataset_root_not = get_dataset_root_not_path(
-        patch_size=patch_size,
+    dataset_root_not = get_cache_dir(
+        patch=patch_size,
         stride=stride,
-        index = index
+        target=TumorMasking.SEVERE
     )
     
     # Log, epoch-model output directory
@@ -324,7 +266,7 @@ def main():
     # Create dataset if not exists
     """if not dataset_root.exists():
         dataset_root.mkdir(parents=True, exist_ok=True)"""
-    
+
     # Existing subjects are ignored in the function
     create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
@@ -333,7 +275,6 @@ def main():
         size=patch_size, stride=stride,
         index=index, region=None
     )
-    
     """create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
         dst=dataset_root_not,
@@ -365,13 +306,12 @@ def main():
     flag = 0
     
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train'],flag), batch_size=batch_size,shuffle = True,
+        PatchDataset(dataset_root, annotation['train'], flag), batch_size=batch_size,shuffle = True,
         num_workers=num_workers,drop_last = True
     )
-
     flag = 1
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid'],flag), batch_size=batch_size,
+        PatchDataset(dataset_root, annotation['valid'], flag), batch_size=batch_size,
         num_workers=num_workers,drop_last = True
     )
     """
@@ -395,11 +335,11 @@ def main():
         num_workers=num_workers
     )
     """
-    #AE
+    # AE
     net = create_model() 
     
     net.load_state_dict(torch.load(
-        #road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
+        # road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
         road_root / "20230928_160620" /'20230928_160625model00166.pth', map_location=device) #AE                                
     )
 
@@ -726,5 +666,7 @@ def main():
         tensorboard.add_scalar('valid_Index', valid_index, epoch)
         # tensorboard.add_scalar('valid_acc', metrics['valid']['cmat'].accuracy(), epoch)
         # tensorboard.add_scalar('valid_f1', metrics['valid']['cmat'].f1(), epoch)
+
+
 if __name__ == '__main__':
     main()

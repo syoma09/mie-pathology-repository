@@ -16,10 +16,15 @@ from torch.backends import cudnn
 from PIL import Image
 from PIL import ImageFile
 from joblib import Parallel, delayed
-from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+from dataset_path import get_dataset_root_path, get_dataset_root_not_path
+from aipatho.dataset import load_annotation
 from data.svs import save_patches
 from GMM import MDN, mdn_loss
 import pytorch_ssim
+
+from aipatho.svs import TumorMasking
+from aipatho.utils.directory import get_cache_dir
+
 
 # To avoid "OSError: image file is truncated"
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -289,16 +294,15 @@ def main():
     #stride = 128,128
     index = 2
     # patch_size = 256, 256
-    dataset_root = get_dataset_root_path(
-        patch_size=patch_size,
+    dataset_root = get_cache_dir(
+        patch=patch_size,
         stride=stride,
-        index=index
+        target=TumorMasking.FULL
     )
-
-    dataset_root_not = get_dataset_root_not_path(
-        patch_size=patch_size,
+    dataset_root_not = get_cache_dir(
+        patch=patch_size,
         stride=stride,
-        index=index
+        target=TumorMasking.SEVERE
     )
 
     # Log, epoch-model output directory

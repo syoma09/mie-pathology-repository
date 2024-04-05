@@ -2,28 +2,27 @@
 # -*- coding: utf-8 -*-
 
 import os
-import datetime
 from pathlib import Path
 import datetime
+import random
+
 import torch
 import torch.nn as nn
 import torch.utils.data
 import torchvision
-import random
-import yaml
-import numpy as np
 import matplotlib
 matplotlib.use('Agg') # -----(1)
 import matplotlib.pyplot as plt
-import cv2
 import numpy as np
 from torch.backends import cudnn
 from PIL import Image
-from PIL import ImageFile
-from scipy.stats import norm
-from dataset_path import load_annotation, get_dataset_root_path, get_dataset_root_not_path
+
+from aipatho.dataset import load_annotation
 from contrastive_learning import Hparams,SimCLR_pl,AddProjection
 from create_soft_labels import estimate_value
+from aipatho.utils.directory import get_cache_dir
+from aipatho.svs import TumorMasking
+
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
@@ -134,18 +133,18 @@ def unnorm(img, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]):
 def main():
     patch_size = 256, 256
     stride = 256, 256
-    # patch_size = 256, 256
-    index = 2
-    dataset_root = get_dataset_root_path(
-        patch_size=patch_size,
+    # index = 2
+
+    dataset_root = get_cache_dir(
+        patch=patch_size,
         stride=stride,
-        index = index
+        target=TumorMasking.FULL
     )
     
-    dataset_root_not = get_dataset_root_not_path(
-        patch_size=patch_size,
+    dataset_root_not = get_cache_dir(
+        patch=patch_size,
         stride=stride,
-        index = index
+        target=TumorMasking.SEVERE
     )
     
     # Log, epoch-model output directory

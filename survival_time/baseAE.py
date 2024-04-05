@@ -9,15 +9,12 @@ import torch.nn as nn
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
-
-from dataset_path import load_annotation
+import torchvision
 
 from aipatho.svs import TumorMasking
-from data.dataset import create_dataset
 from aipatho.model import AutoEncoder2
 from aipatho.utils.directory import get_logdir, get_cache_dir
-from aipatho.dataset import PatchDataset, TimeToTime
-
+from aipatho.dataset import PatchDataset, TimeToTime, load_annotation, create_dataset
 
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = 'cuda:0'
@@ -85,14 +82,19 @@ def main():
     # with open(src / "survival_time.yml", "r") as f:
     #     yml = yaml.safe_load(f)
 
+    transform = torchvision.transforms.Compose([
+        # torchvision.transforms.Resize((224, 224)),
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
     # Build data loader
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train'], labeler=TimeToTime()),
+        PatchDataset(dataset_root, annotation['train'], transform=transform, labeler=TimeToTime()),
         batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid'], labeler=TimeToTime()),
+        PatchDataset(dataset_root, annotation['valid'], transform=transform, labeler=TimeToTime()),
         batch_size=batch_size,
         num_workers=num_workers
     )

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import IntEnum
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -452,9 +452,9 @@ class PatchSaveSevere(PatchSaverBase):
         return np.sum(np.array(mask2)) >= w * h
 
 
-class TumorMasking(Enum):
-    FULL = 0
-    SEVERE = 1
+class TumorMasking(IntEnum):
+    FULL = 0    # All tumor region (Layer-1)
+    SEVERE = 1  # Only sever region in tumor (Layer-2)
 
 
 def save_patches(
