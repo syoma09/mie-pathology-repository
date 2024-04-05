@@ -54,47 +54,55 @@ class ContrastiveLoss(nn.Module):
 
 
 class InfoNCELoss(nn.Module):
-    def __init__(self, device: str = 'cuda'):
+    def __init__(self, temperature: float = 0.07, device: str = 'cuda'):
         super(InfoNCELoss, self).__init__()
 
-        self.criterion = nn.CrossEntropyLoss()
+        self._temperature = temperature
         self.device = device
 
+        self.criterion = nn.CrossEntropyLoss()
+
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        logit, _ = self.info_nce_loss(x)
+        logit, _ = self.info_nce(x)
+
+        # print("-------- InfoNCELoss --------")
+        # print(logit.shape)
+        # print(logit)
+        # print(y.shape)
+        # print(y)
+
         return self.criterion(logit, y)
 
     def info_nce(self, x: torch.Tensor):
+        print("--- Calculating info_nce.................")
         batch_size = x.shape[0]
         n_views = 1
-        temperature = 0.07
-        labels = torch.cat([torch.arange(batch_size) for _ in range(n_views)], dim=0)
+
+        # labels = torch.cat([torch.arange(batch_size) for _ in range(n_views)], dim=0)
+        labels = torch.arange(batch_size)
+        print(labels)
         labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
-        labels = labels.to(self.device)
+        print(labels)
+        labels = labels.to(x.device)
 
         # バッチ
         features = F.normalize(x, dim=1)
-
         similarity_matrix = torch.matmul(features, features.T)
-        # assert similarity_matrix.shape == (
-        #     self.args.n_views * self.args.batch_size, self.args.n_views * self.args.batch_size)
-        # assert similarity_matrix.shape == labels.shape
 
-        # discard the main diagonal from both: labels and similarities matrix
-        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
+        # Discard the main diagonal from both: labels and similarities matrix
+        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(x.device)
         labels = labels[~mask].view(labels.shape[0], -1)
-
         similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
         # assert similarity_matrix.shape == labels.shape
 
-        # select and combine multiple positives
+        # Select and combine multiple positives
         positives = similarity_matrix[labels.bool()].view(labels.shape[0], -1)
 
-        # select only the negatives
+        # Select only the negatives
         negatives = similarity_matrix[~labels.bool()].view(similarity_matrix.shape[0], -1)
 
         logit = torch.cat([positives, negatives], dim=1)
-        logit = logit / temperature
+        logit = logit / self._temperature
 
         # FIXME: Is this correct...?
         labels = torch.zeros(logit.shape[0], dtype=torch.long).to(self.device)

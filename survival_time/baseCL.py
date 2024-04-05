@@ -14,7 +14,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from aipatho.svs import TumorMasking
 from aipatho.utils.directory import get_cache_dir
-from aipatho.dataset import PatchCLDataset, TimeToTime, load_annotation, create_dataset
+from aipatho.dataset import PatchCLDataset, load_annotation, create_dataset
+from aipatho.metrics.label import TimeToTime
 from aipatho.metrics import InfoNCELoss
 from aipatho.model import SimCLR
 

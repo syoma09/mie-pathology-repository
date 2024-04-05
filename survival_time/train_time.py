@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import datetime
 from pathlib import Path
@@ -10,27 +13,25 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 import torchvision
 import numpy as np
-import pandas as pd
-from joblib import Parallel, delayed
 from PIL import Image
 
 from AutoEncoder import create_model
 from lifelines.utils import concordance_index
-from dataset_path import get_dataset_root_path, get_dataset_root_not_path
 from aipatho.dataset import load_annotation
-from data.svs import save_patches
 from aipatho.metrics import MeanVarianceLoss
-from create_soft_labels import estimate_value, create_softlabel_tight, hard_to_soft_labels, create_softlabel_survival_time_wise
+from create_soft_labels import estimate_value, create_softlabel_tight, create_softlabel_survival_time_wise
 
 from aipatho.svs import TumorMasking
 from aipatho.utils.directory import get_cache_dir
+from aipatho.dataset import create_dataset
+# from aipatho.metrics.label import GaussianSoft
 
-# # To avoid "OSError: image file is truncated"
-# ImageFile.LOAD_TRUNCATED_IMAGES = True
-# device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
 device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
+
+
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, annotations, flag):
         super(PatchDataset, self).__init__()
@@ -51,7 +52,7 @@ class PatchDataset(torch.utils.data.Dataset):
                 for path in (root / subject).iterdir()
             ]
 
-        #Transformer
+        # Transformer
         """for subject, label in annotations:
             paths = []
             paths += [
@@ -63,11 +64,11 @@ class PatchDataset(torch.utils.data.Dataset):
             data = reshaped_data(paths)
             #print(data)
             self.__dataset += data"""
-        #print((self.__dataset))
-        #self.__dataset = list(itertools.chain.from_iterable(self.__dataset))
+        # print((self.__dataset))
+        # self.__dataset = list(itertools.chain.from_iterable(self.__dataset))
         random.shuffle(self.__dataset)
-        #print((self.__dataset))
-        #print(len(self.__dataset))
+        # print((self.__dataset))
+        # print(len(self.__dataset))
         """
         if(flag == 1):
             paths = []
@@ -99,7 +100,7 @@ class PatchDataset(torch.utils.data.Dataset):
             ]"""
             
         # Random shuffle
-        #random.shuffle(self.__dataset)
+        # random.shuffle(self.__dataset)
         # reduce_pathces = True
         # if reduce_pathces is True:
         #     data_num = len(self.__dataset) // 5
@@ -120,15 +121,17 @@ class PatchDataset(torch.utils.data.Dataset):
 
         #print(self.paths[0])
         print(len(self.__dataset))
+
     def __len__(self):
         return len(self.__dataset)
+
     def __getitem__(self, item):
         """
         :param item:    Index of item
         :return:        Return tuple of (image, label)
                         Label is always "10" <= MetricLearning
         """
-    # img = self.data[item, :, :, :].view(3, 32, 32)
+        # img = self.data[item, :, :, :].view(3, 32, 32)
         #self.l = self.__dataset[item]
         #print(self.l)
         #path, label = self.l[item]
@@ -154,92 +157,44 @@ class PatchDataset(torch.utils.data.Dataset):
         #label = float(str(name).split('_')[1][2:])  # Survival time
 
         # Normalize
-        #label /= 90.
+        # label /= 90.
         
-        if(label < 11):
+        if label < 11:
             label_class = 0
-        elif(label < 22):
+        elif label < 22:
             label_class = 1
-        elif(label < 33):
+        elif label < 33:
             label_class = 2
-        elif(label < 44):
+        elif label < 44:
             label_class = 3
 
         # Tensor
         label = torch.tensor(label, dtype=torch.float)
         
-        #softlabel
+        # Soft label
         num_classes = 4
-        #soft_labels = hard_to_soft_labels(label_class,num_classes)#basic
-        #soft_labels = create_softlabel_tight(label,num_classes)#tight
-        soft_labels = create_softlabel_survival_time_wise(label,num_classes)#survivaltime_wise
+        # soft_labels = GaussianSoft(num_classes)(label_class)    # basic
+        # soft_labels = create_softlabel_tight(label,num_classes)#tight
+        soft_labels = create_softlabel_survival_time_wise(label, num_classes)#survivaltime_wise
         
-        return img, soft_labels, label, label_class #CNN
+        return img, soft_labels, label, label_class     # CNN
         #return img_group, soft_labels, label, label_class #Transformer
 
-    def pull_group(self,item :int)->([str],[float]):
-
+    def pull_group(self, item: int) -> ([str], [float]):
         return (
            [path for path, _  in self.__dataset[item]],
            [label for _, label  in self.__dataset[item]] 
         )
-    
+
     def pathtoimg(self,path_group):
         return [Image.open(path).convert('RGB') for path in path_group] 
 
-
-
-def create_dataset(
-        src: Path, dst: Path,
-        annotation: Path,
-        size, stride,
-        index: int = None, region: int = None
-):
-    # Load annotation
-    df = pd.read_csv(annotation)
-    #print(df)
-
-    args = []
-    for _, subject in df.iterrows():
-        number = subject['number']
-        subject_dir = dst / str(number)
-        if not subject_dir.exists():
-            subject_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            print(f"Subject #{number} already exists. Skip.")
-            continue
-        
-        path_svs = src / f"{number}.svs"
-        path_xml = src / f"{number}.xml"
-        if not path_svs.exists() or not path_xml.exists():
-            print(f"{path_svs} or {path_xml} do not exists.")
-            continue
-
-        base = subject_dir / 'patch'
-        resize = 256, 256
-        #print(index)
-        args.append((path_svs, path_xml, base, size, stride, resize))
-        # # Serial execution
-        # save_patches(path_svs, path_xml, base, size=size, stride=stride)
-
-    # Approx., 1 thread use 20GB
-    #mem_total = 
-    #n_jobs = int(mem_total / 20)
-    n_jobs = 8
-    print(f'Process in {n_jobs} threads.')
-    #print(index)
-    # Parallel execution
-    Parallel(n_jobs=n_jobs)([
-        delayed(save_patches)(path_svs, path_xml, base, dst, size, stride, resize, index, region)
-        for path_svs, path_xml, base, size, stride, resize in args
-    ])
-    #print('args',args)
 
 def main():
     patch_size = 256,256
     stride = 256,256
     index = 2
-    # patch_size = 256, 256
+
     dataset_root = get_cache_dir(
         patch=patch_size,
         stride=stride,
@@ -263,9 +218,6 @@ def main():
         #"../_data/survival_time_cls/20230627_survival_and_nonsurvival.csv"
         #"../_data/survival_time_cls/fake_data.csv"
     ).expanduser()
-    # Create dataset if not exists
-    """if not dataset_root.exists():
-        dataset_root.mkdir(parents=True, exist_ok=True)"""
 
     # Existing subjects are ignored in the function
     create_dataset(
@@ -273,38 +225,30 @@ def main():
         dst=dataset_root,
         annotation=annotation_path,
         size=patch_size, stride=stride,
-        index=index, region=None
+        index=index, region=None,
+        target=TumorMasking.FULL
     )
-    """create_dataset(
-        src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
-        dst=dataset_root_not,
-        annotation=annotation_path,
-        size=patch_size, stride=stride,
-        index=index, region=None
-    )"""
+    # create_dataset(
+    #     src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
+    #     dst=dataset_root_not,
+    #     annotation=annotation_path,
+    #     size=patch_size, stride=stride,
+    #     index=index, region=None,
+    #     target = TumorMasking.SEVERE
+    # )
+
     # Load annotations
     annotation = load_annotation(annotation_path)
-    if not dataset_root.exists():
-        dataset_root.mkdir(parents=True, exist_ok=True)
+
     epochs = 1000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 4   # For SMT
     # Load train/valid yaml
-    '''with open(src / "survival_time.yml", "r") as f:
-        yml = yaml.safe_load(f)'''
-
-    # print("PatchDataset")
-    # d = PatchDataset(root, yml['train'])
-    # d = PatchDataset(root, yml['valid'])
-    # print(len(d))
-    #
-    # print("==PatchDataset")
-    # return
+    # with open(src / "survival_time.yml", "r") as f:
+    #     yml = yaml.safe_load(f)
 
     # データ読み込み
-    
     flag = 0
-    
     train_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['train'], flag), batch_size=batch_size,shuffle = True,
         num_workers=num_workers,drop_last = True
@@ -335,6 +279,7 @@ def main():
         num_workers=num_workers
     )
     """
+
     # AE
     net = create_model() 
     
@@ -355,7 +300,7 @@ def main():
         nn.Linear(512, 4, bias=True),
     )
 
-    # contrastive
+    # Contrastive
     """train_config = Hparams()
     net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
     
@@ -453,8 +398,8 @@ def main():
     net = net.to(device)
     
 
-    #optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
-    #optimizer_ext = torch.optim.RAdam(ext.parameters(), lr=0.0001)
+    # optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
+    # optimizer_ext = torch.optim.RAdam(ext.parameters(), lr=0.0001)
     optimizer = torch.optim.RAdam(net.parameters(), lr=0.001)
 
     LAMBDA_1 = 0.2
@@ -468,6 +413,7 @@ def main():
     criterion1 = MeanVarianceLoss(LAMBDA_1, LAMBDA_2, START_AGE, END_AGE)
     #criterion2 = nn.CrossEntropyLoss() #hard label
     criterion2 = nn.KLDivLoss(reduction='batchmean') # soft label
+
     tensorboard = SummaryWriter(log_dir='./logs',filename_suffix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
@@ -490,7 +436,7 @@ def main():
         train_loss_mae = 0.
         for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
-            x, y_true,soft_labels,y_class = x.to(device), y_true.to(device) ,soft_labels.to(device),y_class.to(device)
+            y_true, soft_labels, y_class = y_true.to(device), soft_labels.to(device), y_class.to(device)
             
             """
             #Transformer
@@ -508,12 +454,12 @@ def main():
             
             y_pred = net(combined_feature,sort_clusters_list)   # Forward
             """
-            y_pred = net(x)
+            y_pred = net(x.to(device))
 
             mean_loss, variance_loss = criterion1(y_pred, y_class, device)
             
-            #soft label
-            #print(soft_labels)
+            # Soft label
+            # print(soft_labels)
             softmax_loss = criterion2(torch.log_softmax(y_pred, dim=1), soft_labels)
             
             #hard label
@@ -525,9 +471,9 @@ def main():
             pred = estimate_value(y_pred)
             pred = np.squeeze(pred)
             mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
-            #print('')
-            #print(mae)
-            #print('')
+            # print('')
+            # print(mae)
+            # print('')
             status = np.ones(len(y_true))
             
             index = concordance_index(y_true.cpu().numpy(), pred, status)  
@@ -554,6 +500,7 @@ def main():
                 loss.item(),softmax_loss,mean_loss,variance_loss
             ), end="")
             print(f" {mae:.3}", end="")
+
         print("    train MV: {:3.3}".format(train_loss))
         print('')
         print("    train MAE: {:3.3}".format(train_mae))
