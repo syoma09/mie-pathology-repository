@@ -1,5 +1,10 @@
 # mie-pathlogy
 
+## ToDo:
+- TCGA pre-training
+- Unsupervised learning, higher order embedding
+
+
 ## Dataset
 - [The Cancer Genome Atlas Program - National Cancer Institute](https://www.cancer.gov/about-nci/organization/ccg/research/structural-genomics/tcga)
     - [GDC Data Portal](https://gdc.cancer.gov/access-data/gdc-data-portal)
