@@ -76,7 +76,7 @@ $ PYTHONPATH=. python3 train_time.py
         - [ ] ResNetの時はPatchDtaasetのTransofrm,で、Reisze, Normalizeも有効化する
     - [ ] Transformer
         - [ ] L471ぐらいから
-        - [ ] CLはやってないから、虫でも良い
+        - [ ] CLはやってないから、無視でも良い
         - [ ] AE: L482-
         - [ ] PatchDataset.__init__()
             - [ ] L60ぐらいから→ CNN
