@@ -60,6 +60,15 @@ $ PYTHONPATH=. python3 baseCL.py
 $ PYTHONPATH=. python3 train_time.py
 ```
 
+おそらく上のだとAIPathoモジュール見つからない
+```shell
+$ cd mie-pathology-repository
+$ PYTHONPATH=. python3 survival_time/baseAE.py
+$ PYTHONPATH=. python3 survival_time/baseCL.py
+$ PYTHONPATH=. python3 survival_time/train_time.py
+```
+で実行できるはず
+
 - [x] データは今セットしてあるCSVでOK
 - [x] Base model
     - [x] AutoEncoder.py -> baseAE.py 動かす：3-4days
