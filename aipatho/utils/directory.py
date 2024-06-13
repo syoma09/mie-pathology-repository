@@ -21,16 +21,17 @@ def get_cache_dir(patch: (int, int), stride: (int, int), target: TumorMasking) -
     """
 
     # # Home directory
-    # return Path("~/data/_out/mie-pathology/").expanduser()
+    return Path("~/data/_out/mie-pathology/").expanduser()
 
     # Local SSD Cache
+    """
     path = Path('/mnt/cache') / os.environ.get('USER') / 'mie-pathology'
     path /= "survival_p{}_s{}_t{}".format(
         f"{patch[0]}x{patch[1]}",
         f"{stride[0]}x{stride[1]}",
         f"{int(target)}"
     )
-
+    """
     # Create dataset if not exists
     if not path.exists():
         path.mkdir(parents=True, exist_ok=True)
