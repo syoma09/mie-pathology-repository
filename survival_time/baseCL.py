@@ -21,6 +21,12 @@ from aipatho.model import SimCLR
 
 
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+print(torch.cuda.is_available())
+print(torch.version.cuda)
+print("PyTorch version:", torch.__version__)
+print("CUDA device count:", torch.cuda.device_count())
+for i in range(torch.cuda.device_count()):
+    print(f"Device {i}: {torch.cuda.get_device_name(i)}")
 device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True

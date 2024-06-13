@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+#import sys
 
 import torch
 import torch.nn as nn
@@ -17,12 +18,19 @@ from aipatho.utils.directory import get_logdir, get_cache_dir
 from aipatho.dataset import PatchDataset, load_annotation, create_dataset
 from aipatho.metrics.label import TimeToTime
 
+#デバイスの選択
 # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = 'cuda:0'
+print(torch.cuda.is_available())
+print(torch.version.cuda)
+print("PyTorch version:", torch.__version__)
+print("CUDA device count:", torch.cuda.device_count())
+for i in range(torch.cuda.device_count()):
+    print(f"Device {i}: {torch.cuda.get_device_name(i)}")
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
-
+# ウエイトつき確率損失関数の定義
 # class WeightedProbLoss(nn.Module):
 #     def __init__(self, classes):
 #         super(WeightedProbLoss, self).__init__()
@@ -63,7 +71,7 @@ def main():
     annotation_path = Path(
         "_data/survival_time_cls/20220413_aut2.csv"
     )
-    # Existing subjects are ignored in the function
+    # 関数内で既存のサブジェクトは無視される
     create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
         dst=dataset_root,
@@ -72,14 +80,14 @@ def main():
         index=1, region=None,
         target=target
     )
-    # Load annotations
+    # アノテーションの読み込み
     annotation = load_annotation(annotation_path)
 
-    # Log, epoch-model output directory
+    # ログ,エポック-モデルの出力ディレクトリLog, epoch-model output directory
     epochs = 10_000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
-    # # Load train/valid yaml
+    # # 訓練/検証のYAMLをロード　Load train/valid yaml
     # with open(src / "survival_time.yml", "r") as f:
     #     yml = yaml.safe_load(f)
 
@@ -88,7 +96,7 @@ def main():
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
-    # Build data loader
+    #データローダの構築 Build data loader
     train_loader = torch.utils.data.DataLoader(
         PatchDataset(dataset_root, annotation['train'], transform=transform, labeler=TimeToTime()),
         batch_size=batch_size, shuffle=True,
@@ -118,24 +126,24 @@ def main():
     print(net)
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
-        # Switch to training mode
+        # 訓練モードに切り替え　Switch to training mode
         net.train()
 
         train_loss = 0.
         for batch, (x, _) in enumerate(train_loader):
-            # Init optimizer
+            # オプティマイザを初期化Init optimizer
             optimizer.zero_grad()
 
-            # Calc loss
+            # 損失の計算　Calc loss
             x = x.to(device)
-            y_pred = net(x)   # Forward
+            y_pred = net(x)   # 順伝搬　Forward
             loss = criterion(y_pred, x)
 
-            # Backward propagation
+            # 逆伝搬　Backward propagation
             loss.backward()
-            optimizer.step()    # Update parameters
+            optimizer.step()    # パラメータ更新　Update parameters
 
-            # Logging
+            # ログの記録　Logging
             train_loss += loss.item() / len(train_loader)
             print("\r  Batch({:6}/{:6})[{}]: loss={:.4} ".format(
                 batch, len(train_loader),
@@ -147,10 +155,10 @@ def main():
         print('    Saving model...')
         torch.save(net.state_dict(), logdir / f"state{epoch:05}.pth")
 
-        # Switch to evaluation mode
+        #　評価モードに切り替え Switch to evaluation mode
         net.eval()
 
-        # Calculate validation metrics
+        # validationメトリック？の計算　Calculate validation metrics
         valid_loss = 0.
         with torch.no_grad():
             # valid_loss = 0.
@@ -158,10 +166,10 @@ def main():
                 x = x.to(device)
                 y_pred = net(x)  # Prediction
                 loss = criterion(y_pred, x)
-                # Logging
+                # ログの記録 Logging
                 valid_loss += loss.item() / len(valid_loader)
 
-        # Console write
+        # コンソール出力　Console write
         print("    valid loss: {:3.3}".format(valid_loss))
         # print("          acc : {:3.3}".format(metrics['valid']['cmat'].accuracy()))
         # Write tensorboard
