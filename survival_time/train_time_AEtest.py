@@ -14,10 +14,8 @@ from torch.backends import cudnn
 import torchvision
 import numpy as np
 from PIL import Image
-from lifelines.utils import concordance_index
 
 #from AutoEncoder import create_model
-from aipatho.model.autoencoder2  import AutoEncoder2
 from survival import  create_model
 #from lifelines.utils import concordance_index
 from aipatho.dataset import load_annotation
@@ -29,6 +27,10 @@ from aipatho.utils.directory import get_cache_dir
 from aipatho.dataset import create_dataset
 # from aipatho.metrics.label import GaussianSoft
 
+
+#榊原
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ['TORCH_USE_CUDA_DSA'] = '1'
 
 device = 'cuda:1'
 if torch.cuda.is_available():
@@ -55,72 +57,15 @@ class PatchDataset(torch.utils.data.Dataset):
                 for path in (root / subject).iterdir()
             ]
 
-        # Transformer
-        """for subject, label in annotations:
-            paths = []
-            paths += [
-                (path, label)   # Same label for one subject
-                for path in (root / subject).iterdir()
-            ]
-            #print(paths)
-            #random.shuffle(paths)
-            data = reshaped_data(paths)
-            #print(data)
-            self.__dataset += data"""
+
         # print((self.__dataset))
         # self.__dataset = list(itertools.chain.from_iterable(self.__dataset))
         random.shuffle(self.__dataset)
         # print((self.__dataset))
         # print(len(self.__dataset))
-        """
-        if(flag == 1):
-            paths = []
-            for subject, label in annotations:
-                paths += [
-                    (path, label)   # Same label for one subject
-                    for path in (root / subject).iterdir()
-                ] 
-            min = len(paths)
-            for i in range(3):
-                if(min > len([l for _, l in paths if (i * 11 < l) & (l <= (i+1) * 11)])):
-                    min = len([l for _, l in paths if (i * 11 < l) & (l <= (i+1) * 11)])
-            
-            print(min)
-            class_dataset_0 = [item for item in paths if item[1] <= 11]
-            class_dataset_1 = [item for item in paths if 11 < item[1] and item[1] <= 22]
-            class_dataset_2 = [item for item in paths if 22 < item[1] and item[1] <= 33]
-            class_dataset_3 = [item for item in paths if 33 < item[1] and item[1] <= 44]
-            
-            self.__dataset += random.sample(class_dataset_0,min)
-            self.__dataset += random.sample(class_dataset_1,min)    
-            self.__dataset += random.sample(class_dataset_2,min)
-            self.__dataset += random.sample(class_dataset_3,min)
-        else:
-            for subject, label in annotations:
-                self.__dataset += [
-                    (path, label)   # Same label for one subject
-                    for path in (root / subject).iterdir()
-            ]"""
-            
-        # Random shuffle
-        # random.shuffle(self.__dataset)
-        # reduce_pathces = True
-        # if reduce_pathces is True:
-        #     data_num = len(self.__dataset) // 5
-        #     self.__dataset = self.__dataset[:data_num]
-
-        # self.__num_class = len(set(label for _, label in self.__dataset))
+        print("a")
+  
         self.__num_class = 4
-        # self.__dataset = self.__dataset[:512]
-
-        """print('PatchDataset')
-        print('  # patch :', len(self.__dataset))
-        print('  # of 0  :', len([l for _, l in self.__dataset if l <= 11]))
-        print('  # of 1  :', len([l for _, l in self.__dataset if (11 < l) & (l <= 22)]))
-        print('  # of 2  :', len([l for _, l in self.__dataset if (22 < l) & (l <= 33)]))
-        print('  # of 3  :', len([l for _, l in self.__dataset if (33 < l) & (l <= 44)]))
-        print('  subjects:', sorted(set([str(s).split('/')[-2] for s, _ in self.__dataset])))
-        """
 
         #print(self.paths[0])
         print(len(self.__dataset))
@@ -138,18 +83,9 @@ class PatchDataset(torch.utils.data.Dataset):
         #self.l = self.__dataset[item]
         #print(self.l)
         #path, label = self.l[item]
-        
-        # Transformer
-        """path_group, [label, *_] = self.pull_group(item)
-        #print(type(path_group[0]))
-        img_group = self.pathtoimg(path_group)
-        group_transform = VideoTransform()
-        img_group = group_transform(img_group)
-        #label = label_group[0]"""
-        
+
         # CNN
         path, label = self.__dataset[item]
-
         if os.path.isdir(path):
             # ディレクトリの場合はエラーメッセージを出してスキップ
             return self.__getitem__((item + 1) % len(self.__dataset))
@@ -266,41 +202,15 @@ def main():
         PatchDataset(dataset_root, annotation['valid'], flag), batch_size=batch_size,
         num_workers=num_workers,drop_last = True
     )
-    """
-    train_dataset = []
-    valid_dataset = []
-    flag = 0
-    train_dataset.append(PatchDataset(dataset_root, annotation['train'],flag))
-    flag = 1
-    train_dataset.append(PatchDataset(dataset_root_not, annotation['train'],flag))
-    flag = 0
-    valid_dataset.append(PatchDataset(dataset_root, annotation['valid'],flag))
-    flag =1
-    valid_dataset.append(PatchDataset(dataset_root_not, annotation['valid'],flag))
-    
-    train_loader = torch.utils.data.DataLoader(
-        torch.utils.data.ConcatDataset(train_dataset), batch_size=batch_size, shuffle=True,
-        num_workers=num_workers
-    )
-    valid_loader = torch.utils.data.DataLoader(
-        torch.utils.data.ConcatDataset(valid_dataset), batch_size=batch_size,
-        num_workers=num_workers
-    )
-    """
+
 
     # AE
-    #net = create_model() 
-    #変更　AutoEncoder2クラスのインスタンス化(オブジェクト作成)
-    net = AutoEncoder2()
+    net = create_model() 
     
-    #パラメータロード
     net.load_state_dict(torch.load(
-        # road_root / "20230919_175330" /'20230919_175350model00125.pth', map_location=device) #AE
-        #road_root / "20230928_160620" /'20230928_160625model00166.pth', map_location=device) #AE
         road_root / "20240612_193244" /'state01000.pth', map_location=device) #AE                                 
     )
 
-    #デコーダ部置き換え
     net.dec = nn.Sequential( #AE
         nn.Flatten(), #入力サイズ合わせるために勝手に層作っちゃっていいのか？
         nn.Linear(512, 512, bias=True),
@@ -313,101 +223,6 @@ def main():
         nn.Dropout(0.5),
         nn.Linear(512, 4, bias=True),
     )
-
-    # Contrastive
-    """train_config = Hparams()
-    net = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
-    
-    net.model.projection = nn.Sequential(
-    #net.fc = nn.Sequential( 
-    #net.dec = nn.Sequential(
-        nn.Linear(512, 512, bias=True),
-        #nn.BatchNorm1d(512),
-        nn.ReLU(),
-        #nn.Dropout(0.5),
-        nn.Linear(512, 512, bias=True),
-    )
-    
-    net.load_state_dict(torch.load(
-        road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive                                
-    )
-    
-    #num_features = net.fc.in_features
-    # print(num_features)  # 512
-    #net.dec = nn.ReLU()
-    #print(net.model.projection)
-    
-    net.model.projection = nn.Sequential( #CL
-        nn.Linear(512, 512, bias=True),
-        nn.BatchNorm1d(512),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(512, 512, bias=True),
-        nn.BatchNorm1d(512),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(512, 4, bias=True),
-    )"""
-    
-    
-    # ResNet
-    
-    """net = torchvision.models.resnet18(pretrained = True)
-    net.fc = nn.Sequential( 
-        nn.Linear(512, 512, bias=True),
-        nn.BatchNorm1d(512),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(512, 512, bias=True),
-        nn.BatchNorm1d(512),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(512, 4, bias=True),
-    )
-    """
-    
-    
-    #Selfsupervised + Transformer
-    """ext = create_model()
-    # contrastive
-    #train_config = Hparams()
-    #ext = SimCLR_pl(train_config, model=torchvision.models.resnet18(pretrained=False), feat_dim=512)
-    ext.load_state_dict(torch.load(
-        #road_root / "20230713_145600" /'20230713_145606model00055.pth', map_location=device) #Contrstive
-        road_root / "20230928_160620" /'20230928_160625model00166.pth', map_location=device) #AE                               
-    )
-    
-    # AE
-    ext.dec = nn.Sequential( 
-        #nn.Linear(512, 128, bias=True),
-    )
-
-    for param in ext.parameters():
-        param.requires_grad = False
-    #last_layer = ext.dec
-    last_layer = list(ext.children())[-1]
-    print(f'except last layer: {last_layer}')
-    for param in last_layer.parameters():
-        param.requires_grad = True
-
-    ext = ext.to(device)
-    
-    model_name = "SelfAttention_4096_noExit"
-    num_layers =  12
-    d_model = 512
-    dim = 512
-    #embed_dim = num_layers * dim
-    embed_dim = 512
-    dff = 4096 * 2
-    num_heads = 4
-    dropout_rate = 0.5
-    learning_rate = 0.001
-    est = Attention(d_model, embed_dim, num_heads, num_layers, dropout=dropout_rate,
-                      dff=dff, device=device).to(device)
-    
-    PE = PositionalEncoding(d_model,dropout_rate)
-    net = ExtTrans(ext,est,PE)
-    """
     
     net = net.to(device)
     
@@ -451,23 +266,7 @@ def main():
         for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
             y_true, soft_labels, y_class = y_true.to(device), soft_labels.to(device), y_class.to(device)
-                              
-            """
-            #Transformer
-            sort_features_list = []
-            sort_clusters_list = []
-            for i in range(len(x)):
-                #print(x[i,:,:,:].shape)
-                feature = ext(x[i,:,:,:])
-                #print(feature.shape)
-                sort_features,sort_clusters = features_sort(feature)
-                #feature_list.append(feature)
-                sort_features_list.append(sort_features)
-                sort_clusters_list.append(sort_clusters)
-            combined_feature = torch.stack(sort_features_list,dim=0)
             
-            y_pred = net(combined_feature,sort_clusters_list)   # Forward
-            """
             y_pred = net(x.to(device))
 
             mean_loss, variance_loss = criterion1(y_pred, y_class, device)
@@ -544,23 +343,6 @@ def main():
             valid_index = 0.
             for batch, (x, soft_labels, y_true,y_class) in enumerate(valid_loader):
                 x, y_true, soft_labels, y_class = x.to(device), y_true.to(device) ,soft_labels.to(device), y_class.to(device)
-                #Transformer
-                """# テンソルを格納するリスト
-                sort_features_list = []
-                sort_clusters_list = []
-                for i in range(len(x)):
-                    feature = ext(x[i,:,:,:])
-                    #print(feature.shape)
-                    sort_features,sort_clusters = features_sort(feature)
-                    #feature_list.append(feature)
-                    sort_features_list.append(sort_features)
-                    sort_clusters_list.append(sort_clusters)
-                combined_feature = torch.cat(sort_features_list)
-                combined_feature = torch.reshape(combined_feature,(batch_size,8,d_model))
-                #print(combined_feature.shape)  
-                y_pred = net(combined_feature,sort_clusters_list)   # Forward
-                #y_pred = net(combined_feature)   # Forward
-                """
 
                 y_pred = net(x)  # Prediction
                 #yt_one = torch.from_numpy(OnehotEncording(y_class)).to(device)
