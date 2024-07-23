@@ -7,14 +7,14 @@ from pathlib import Path
 
 from aipatho.svs import TumorMasking
 
-
+#ログを残すディレクトリ
 def get_logdir(root: Path = Path("~/data/_out/mie-pathology/")) -> Path:
     log_root = root.expanduser().absolute() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_root.mkdir(parents=True, exist_ok=True)
 
     return log_root
 
-
+#パッチ画像の保存先ディレクトリ
 def get_cache_dir(patch: (int, int), stride: (int, int), target: TumorMasking) -> Path:
     """
     :return:    Dataset root Path() object
