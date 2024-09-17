@@ -30,7 +30,7 @@ from aipatho.dataset import create_dataset
 # from aipatho.metrics.label import GaussianSoft
 
 
-device = 'cuda:1'
+device = 'cuda:0'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 

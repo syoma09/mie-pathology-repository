@@ -71,6 +71,12 @@ def main():
     annotation_path = Path(
         "_data/survival_time_cls/20220413_aut2.csv"
     )
+
+    # 公開データセット用
+    add_annotation_path = Path(
+        "_data/survival_time_cls/add_dataset.csv"
+    )
+
     # 関数内で既存のサブジェクトは無視される
     create_dataset(
         src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
@@ -80,8 +86,27 @@ def main():
         index=1, region=None,
         target=target
     )
+    # 公開データセット用
+    create_dataset(
+        src=Path("新しいところに"),
+        dst=dataset_root,
+        annotation=annotation_path,
+        size=patch_size, stride=stride,
+        index=1, region=None,
+        target=target        
+    )
+
     # アノテーションの読み込み
     annotation = load_annotation(annotation_path)
+
+    # 公開データセット用
+    add_annotation = load_annotation(add_annotation_path)
+
+    # アノテーションを結合
+    annotation = {
+        'train': annotation['train'] + add_annotation['train'],
+        'valid': annotation['valid'] + add_annotation['valid']
+    }
 
     # ログ,エポック-モデルの出力ディレクトリLog, epoch-model output directory
     epochs = 10_000

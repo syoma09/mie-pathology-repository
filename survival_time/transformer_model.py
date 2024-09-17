@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from sklearn.cluster import KMeans
 
 # Extracter + TransformerEncoder
 class ExtTrans(torch.nn.Module):
@@ -43,7 +44,7 @@ class PositionalEncoding(nn.Module):
         #self.register_buffer('pe', pe)
 
     def forward(self, x,sort_clusters_list):
-        
+        print(f"PositionalEncoding.forward called with x: {x} and sort_clusters_list: {sort_clusters_list}")
         #Args:
         #    x: Tensor, shape [batch_size, seq_len, embedding_dim]
         
