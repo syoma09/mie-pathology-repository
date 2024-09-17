@@ -78,12 +78,13 @@ class PatchDataset(torch.utils.data.Dataset):
 
         return img, soft_labels, label, label_class
 
+#なんだこれ？
 def transform_image(img):
     if isinstance(img, torch.Tensor):
         return img
     elif isinstance(img, np.ndarray):
         img = Image.fromarray(img)
-    return transform(img)
+    return transform_image(img)
 
 def main():
     patch_size = 256, 256
@@ -153,7 +154,7 @@ def main():
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
-
+    #トレーニングループ
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
         model.train()
@@ -230,6 +231,7 @@ def main():
         print('    Saving model...')
         torch.save(model.state_dict(), log_root / f"model{epoch:05}.pth")
 
+        #検証ループ
         model.eval()
         metrics = {
             'train': {
@@ -250,8 +252,10 @@ def main():
                 x, y_true, soft_labels, y_class = x.to(device), y_true.to(device), soft_labels.to(device), y_class.to(device)
 
                 # 画像をトランスフォーム
-                #x = torch.stack([transform(img) for img in x]).to(device)
+                x = [transform(img) if isinstance(img, (Image.Image, np.ndarray)) else img for img in x]
                 x = torch.stack([transform_image(img) for img in x]).to(device)
+                #x = torch.stack([transform(img) for img in x]).to(device) #これだけ有効？
+                #x = torch.stack([transform_image(img) for img in x]).to(device)
                 outputs = model(x)
 
                 # 出力を適切に処理
@@ -291,6 +295,7 @@ def main():
         print('')
         print("    valid INDEX: {:3.3}".format(valid_index))
 
+        # tensorboardに書き込み
         tensorboard.add_scalar('train_MV', train_loss, epoch)
         tensorboard.add_scalar('train_Mean', train_mean_loss, epoch)
         tensorboard.add_scalar('train_Variance', train_variance_loss, epoch)
