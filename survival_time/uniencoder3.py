@@ -133,8 +133,9 @@ def main():
     annotation = load_annotation(annotation_path)
 
     epochs = 1000
-    batch_size = 8
+    batch_size = 16 #適切な値に変更する
     num_workers = os.cpu_count() // 4
+    print(f"num_workers = {num_workers}")
 
     flag = 0
     train_loader = torch.utils.data.DataLoader(
@@ -231,6 +232,10 @@ def main():
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
+
+    # Mixed precision training の準備
+    scaler = torch.cuda.amp.GradScaler()
+
     #トレーニングループ
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
@@ -259,32 +264,35 @@ def main():
             print(f"soft_labels shape: {soft_labels.shape}, soft_labels dtype: {soft_labels.dtype}")
             print(f"y_class shape: {y_class.shape}, y_class dtype: {y_class.dtype}")"""
             
-            outputs = model(x)
+            with torch.cuda.amp.autocast():
+                outputs = model(x)
 
-            # 出力を適切に処理→しなくていい！そのまま
-            #print(f"outputs shape: {outputs.shape}")
-            # y_pred = outputs.mean(dim=1, keepdim=True)  # 2次元テンソルに変換 もとのコード
-            y_pred = outputs
-            #print(f"y_pred shape: {y_pred.shape}")
-            #print(f"y_true shape: {y_true.shape}")
+                # 出力を適切に処理→しない、そのまま
+                #print(f"outputs shape: {outputs.shape}")
+                # y_pred = outputs.mean(dim=1, keepdim=True)  # 2次元テンソルに変換 もとのコード
+                y_pred = outputs
+                #print(f"y_pred shape: {y_pred.shape}")
+                #print(f"y_true shape: {y_true.shape}")
 
-            # y_predの次元を確認し、適切な次元でsoftmaxを適用
-            if y_pred.dim() == 1:
-                y_pred = y_pred.unsqueeze(0)
-            p = torch.softmax(y_pred, dim=-1)
+                # y_predの次元を確認し、適切な次元でsoftmaxを適用
+                if y_pred.dim() == 1:
+                    y_pred = y_pred.unsqueeze(0)
+                p = torch.softmax(y_pred, dim=-1)
 
-            mean_loss, variance_loss = criterion1(p, y_class, device)
-            softmax_loss = criterion2(torch.log_softmax(y_pred, dim=-1), soft_labels)
+                mean_loss, variance_loss = criterion1(p, y_class, device)
+                softmax_loss = criterion2(torch.log_softmax(y_pred, dim=-1), soft_labels)
 
-            loss = mean_loss + variance_loss + softmax_loss
+                loss = mean_loss + variance_loss + softmax_loss
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
             pred = estimate_value(y_pred)
             pred = np.squeeze(pred)
             mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()
             status = np.ones(len(y_true))
             index = concordance_index(y_true.cpu().numpy(), pred, status)
-
-            loss.backward()
-            optimizer.step()
 
             train_loss += loss.item() / len(train_loader)
             train_mean_loss += mean_loss / len(train_loader)
@@ -334,21 +342,24 @@ def main():
                 x = torch.stack([transform_image(img) for img in x]).to(device)
                 #x = torch.stack([transform(img) for img in x]).to(device) #これだけ有効？
                 #x = torch.stack([transform_image(img) for img in x]).to(device)
-                outputs = model(x)
+                
+                with torch.cuda.amp.autocast():
+                    outputs = model(x)
 
-                # 出力を適切に処理→しなくていい！そのまま
-                #y_pred = outputs.mean(dim=1)
-                y_pred = outputs
+                    # 出力を適切に処理
+                    #y_pred = outputs.mean(dim=1)
+                    y_pred = outputs
+                            
+                    # y_predの次元を確認し、適切な次元でsoftmaxを適用
+                    if y_pred.dim() == 1:
+                        y_pred = y_pred.unsqueeze(0)
+                    p = torch.softmax(y_pred, dim=-1)
 
-                # y_predの次元を確認し、適切な次元でsoftmaxを適用
-                if y_pred.dim() == 1:
-                    y_pred = y_pred.unsqueeze(0)
-                p = torch.softmax(y_pred, dim=-1)
+                    mean_loss, variance_loss = criterion1(p, y_class, device)
+                    softmax_loss = criterion2(torch.log_softmax(y_pred, dim=-1), soft_labels)
 
-                mean_loss, variance_loss = criterion1(p, y_class, device)
-                softmax_loss = criterion2(torch.log_softmax(y_pred, dim=-1), soft_labels)
+                    loss = mean_loss + variance_loss + softmax_loss
 
-                loss = mean_loss + variance_loss + softmax_loss
                 pred = estimate_value(y_pred)
                 pred = np.squeeze(pred)
                 mae = np.absolute(pred - y_true.cpu().data.numpy()).mean()

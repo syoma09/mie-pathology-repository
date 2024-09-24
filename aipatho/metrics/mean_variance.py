@@ -30,8 +30,8 @@ class MeanVarianceLoss(nn.Module):
         # Mean loss
         a = torch.arange(self.start_age, self.end_age + 1, dtype=torch.float32).to(device)
         # テンソルのサイズを確認
-        print(f"p size: {p.size()}")
-        print(f"a size: {a.size()}")
+        #print(f"p size: {p.size()}")
+        #print(f"a size: {a.size()}")
         mean = torch.squeeze((p * a).sum(1, keepdim=True), dim=1)
         mse = (mean - y_true)**2
         mean_loss = mse.mean() / 2.0
