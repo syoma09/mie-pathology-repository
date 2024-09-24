@@ -11,6 +11,7 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 import torchvision
+from torchvision import transforms
 import numpy as np
 from PIL import Image
 from lifelines.utils import concordance_index
@@ -18,7 +19,7 @@ from lifelines.utils import concordance_index
 import timm
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
-from huggingface_hub import login
+from huggingface_hub import login, hf_hub_download
 
 from survival import create_model
 from aipatho.dataset import load_annotation
@@ -132,7 +133,7 @@ def main():
     annotation = load_annotation(annotation_path)
 
     epochs = 1000
-    batch_size = 16
+    batch_size = 8
     num_workers = os.cpu_count() // 4
 
     flag = 0
@@ -156,17 +157,62 @@ def main():
     class_counts = valid_dataset.count_images_per_class()
     print(f"Class counts in validation dataset: {class_counts}")
 
+    # 環境変数からトークンを取得
+    token = os.getenv('HUGGINGFACE_HUB_TOKEN')
     # Hugging Faceにログイン
-    login()  # User Access Tokenを使用してログイン
+    login(token)  # login with your User Access Token, found at https://huggingface.co/settings/tokens
 
-    # モデルとトランスフォームのロード
-    model = timm.create_model("hf-hub:MahmoodLab/uni", pretrained=True, init_values=1e-5, dynamic_img_size=True)
-    transform = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
-    model = model.to(device)
+    # モデルのダウンロードと準備
+    local_dir = "../assets/ckpts/vit_large_patch16_224.dinov2.uni_mass100k/"
+    os.makedirs(local_dir, exist_ok=True)  # create directory if it does not exist
+    hf_hub_download("MahmoodLab/UNI", filename="pytorch_model.bin", local_dir=local_dir, force_download=True)
+    model = timm.create_model(
+        "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
+    )
+    model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu"), strict=True)
     model.eval()
+    model.to(device)
+
+    # 画像の前処理
+    transform = transforms.Compose(
+        [
+            transforms.Resize(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ]
+    )
+    # モデルの出力を512次元に変換するための追加の線形層
+    class CustomModel(nn.Module):
+        def __init__(self, base_model):
+            super(CustomModel, self).__init__()
+            self.base_model = base_model
+            self.fc = nn.Linear(1024, 512)  # 1024次元から512次元に変換する線形層
+            self.additional_layers = nn.Sequential(
+                nn.Flatten(),  # 必要に応じて使用
+                nn.Linear(512, 512, bias=True),
+                nn.BatchNorm1d(512),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(512, 512, bias=True),
+                nn.BatchNorm1d(512),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(512, 4, bias=True),
+            )
+
+        def forward(self, x):
+            features = self.base_model(x)
+            features = self.fc(features)
+            output = self.additional_layers(features)
+            return output
+
+    # カスタムモデルを準備
+    model = CustomModel(model)
+    model = model.to(device)
+    #print(model)
     
     # モデルの出力次元を確認するためのコード
-    dummy_input = torch.randn(1, 3, 256, 256).to(device)  # ダミー入力
+    dummy_input = torch.randn(32, 3, 256, 256).to(device)  # ダミー入力
     dummy_output = model(dummy_input)
     print(f"Model output shape: {dummy_output.shape}")
 
@@ -185,6 +231,7 @@ def main():
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
+    
     #トレーニングループ
     for epoch in range(epochs):
         print(f"Epoch [{epoch:5}/{epochs:5}]:")
