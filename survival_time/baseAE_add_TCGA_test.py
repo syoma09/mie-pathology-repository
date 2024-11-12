@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
+#TCGAデータを追加したAutoEncoderの学習
 import os
 from pathlib import Path
 #import sys
@@ -11,7 +11,7 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from torch.backends import cudnn
 import torchvision
-import torchmetrics
+from torch.cuda.amp import GradScaler, autocast
 
 from aipatho.svs import TumorMasking
 from aipatho.model import AutoEncoder2
@@ -30,42 +30,6 @@ for i in range(torch.cuda.device_count()):
     print(f"Device {i}: {torch.cuda.get_device_name(i)}")
 if torch.cuda.is_available():
     cudnn.benchmark = True
-    
-class SSIMLoss(nn.Module):
-    def __init__(self):
-        super(SSIMLoss, self).__init__()
-        self.ssim = torchmetrics.StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
-
-    def forward(self, pred, target):
-        pred = pred.to(device)
-        target = target.to(device)
-        return 1 - self.ssim(pred, target)
-
-
-# ウエイトつき確率損失関数の定義
-# class WeightedProbLoss(nn.Module):
-#     def __init__(self, classes):
-#         super(WeightedProbLoss, self).__init__()
-#
-#         if isinstance(classes, int):
-#             classes = [i for i in range(classes)]
-#
-#         self.classes = torch.Tensor(classes).to(device)
-#
-#     def forward(self, pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
-#         """
-#
-#         :param pred:    Probabilities of each class
-#         :param true:    1-hot vector
-#         :return:
-#         """
-#
-#         c_pred = torch.sum(torch.mul(pred, self.classes))
-#         c_true = torch.argmax(true)
-
-
-
-
 
 def main():
     patch_size = 512, 512
@@ -78,54 +42,52 @@ def main():
         stride=stride,
         target=target
     )
-    print(dataset_root)
+    print(dataset_root) #もとのデータセットのパス
+    
+    add_dataset_root = Path(
+        "/net/nfs3/export/home/sakakibara/data/TCGA_patch_image/" #追加のデータセットのパス
+    )
 
     annotation_path = Path(
-        "_data/survival_time_cls/20220413_aut2.csv"
+        "_data/survival_time_cls/20220413_aut2.csv" #もとのデータセットのアノテーション
     )
     
-    """# 公開データセット用
+    # 公開データセット用
     add_annotation_path = Path(
-        "_data/survival_time_cls/add_dataset.csv"
-    )"""
+        "_data/survival_time_cls/TCGA_annotation.csv" #追加のデータセットのアノテーション
+    )
 
     # 関数内で既存のサブジェクトは無視される
     create_dataset(
-        src=Path("/net/nfs3/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
+        src=Path("/net/nfs2/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"),
         dst=dataset_root,
         annotation=annotation_path,
         size=patch_size, stride=stride,
         index=1, region=None,
         target=target
     )
-    """
+    
+    # パッチ分割は終わっているからいらない
     # 公開データセット用
-    create_dataset(
+    """create_dataset(
         src=Path("新しいところに"),
-        dst=dataset_root,
-        annotation=annotation_path,
+        dst=add_dataset_root,
+        add_annotation=add_annotation_path,
         size=patch_size, stride=stride,
         index=1, region=None,
         target=target        
     )"""
 
     # アノテーションの読み込み
-    annotation = load_annotation(annotation_path)
+    annotation = load_annotation(annotation_path) 
 
-    """
+    
     # 公開データセット用
     add_annotation = load_annotation(add_annotation_path)
 
-    # アノテーションを結合
-    annotation = {
-        'train': annotation['train'] + add_annotation['train'],
-        'valid': annotation['valid'] + add_annotation['valid']
-    }
-    """
-
     # ログ,エポック-モデルの出力ディレクトリLog, epoch-model output directory
-    epochs = 10_000
-    batch_size = 32     # 64 requires 19 GiB VRAM
+    epochs = 1000
+    batch_size = 64 #32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
     # # 訓練/検証のYAMLをロード　Load train/valid yaml
     # with open(src / "survival_time.yml", "r") as f:
@@ -136,14 +98,22 @@ def main():
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
-    #データローダの構築 Build data loader
+    
+
+    # データローダの構築 Build data loader
     train_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['train'], transform=transform, labeler=TimeToTime()),
+        torch.utils.data.ConcatDataset([
+            PatchDataset(dataset_root, annotation['train'], transform=transform, labeler=TimeToTime()),
+            PatchDataset(add_dataset_root, add_annotation['train'], transform=transform, labeler=TimeToTime())
+        ]),
         batch_size=batch_size, shuffle=True,
         num_workers=num_workers
     )
     valid_loader = torch.utils.data.DataLoader(
-        PatchDataset(dataset_root, annotation['valid'], transform=transform, labeler=TimeToTime()),
+        torch.utils.data.ConcatDataset([
+            PatchDataset(dataset_root, annotation['valid'], transform=transform, labeler=TimeToTime()),
+            PatchDataset(add_dataset_root, add_annotation['valid'], transform=transform, labeler=TimeToTime())
+        ]),
         batch_size=batch_size,
         num_workers=num_workers
     )
@@ -159,10 +129,12 @@ def main():
     # criterion = nn.CrossEntropyLoss()
     # criterion = nn.BCELoss()
     criterion = nn.MSELoss()
-    #criterion = SSIMLoss() #上のMSE→SSIMに変更
 
     logdir = get_logdir()
     tensorboard = SummaryWriter(log_dir=str(logdir))
+
+    # Mixed Precision Training
+    scaler = GradScaler()
 
     print(net)
     for epoch in range(epochs):
@@ -175,14 +147,16 @@ def main():
             # オプティマイザを初期化Init optimizer
             optimizer.zero_grad()
 
-            # 損失の計算　Calc loss
-            x = x.to(device)
-            y_pred = net(x)   # 順伝搬　Forward
-            loss = criterion(y_pred, x)
+            with autocast():
+                # 損失の計算　Calc loss
+                x = x.to(device)
+                y_pred = net(x)   # 順伝搬　Forward
+                loss = criterion(y_pred, x)
 
             # 逆伝搬　Backward propagation
-            loss.backward()
-            optimizer.step()    # パラメータ更新　Update parameters
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             # ログの記録　Logging
             train_loss += loss.item() / len(train_loader)
@@ -202,13 +176,13 @@ def main():
         # validationメトリック？の計算　Calculate validation metrics
         valid_loss = 0.
         with torch.no_grad():
-            # valid_loss = 0.
-            for batch, (x, _) in enumerate(valid_loader):
-                x = x.to(device)
-                y_pred = net(x)  # Prediction
-                loss = criterion(y_pred, x)
-                # ログの記録 Logging
-                valid_loss += loss.item() / len(valid_loader)
+            with autocast():
+                for batch, (x, _) in enumerate(valid_loader):
+                    x = x.to(device)
+                    y_pred = net(x)  # Prediction
+                    loss = criterion(y_pred, x)
+                    # ログの記録 Logging
+                    valid_loss += loss.item() / len(valid_loader)
 
         # コンソール出力　Console write
         print("    valid loss: {:3.3}".format(valid_loss))

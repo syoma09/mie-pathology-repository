@@ -122,7 +122,7 @@ def load_annotation(path: Path) -> dict:
 
     for _, row in pd.read_csv(path).iterrows():
         annotation[
-            # Switch train/valid by tvt-column value (0: train, 1: valid)
+            # Switch train/valid by tvt-column value (0: train, 1: valid) #tvt列の値（0：train、1：valid）でtrain/validを決定
             ['train', 'valid', 'test', 'IGNORE'][int(row['tvt'])]
         ].append(
             # (row['number'], row['OS'])              # Append annotation tuple

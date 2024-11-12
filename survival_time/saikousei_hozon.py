@@ -29,6 +29,9 @@ def save_images(input_images, reconstructed_images, save_dir, prefix='img'):
     
     for i, (input_img, recon_img) in enumerate(zip(input_images, reconstructed_images)):
         input_img = transforms.ToPILImage()(input_img.cpu())
+         # 出力画像を[0, 255]に変換
+        recon_img = (recon_img + 1) / 2 * 255  # [-1, 1]を[0, 255]に変換
+        recon_img = recon_img.clip(0, 255).to(torch.uint8)  # 値を0-255の範囲にクリップ
         recon_img = transforms.ToPILImage()(recon_img.cpu())
 
         input_img.save(os.path.join(save_dir, f"{prefix}_input_{i}.png"))
@@ -36,7 +39,10 @@ def save_images(input_images, reconstructed_images, save_dir, prefix='img'):
 
 def main():
     # モデルのパラメータを読み込む
-    model_path = "/net/nfs2/export/home/sakakibara/data/_out/mie-pathology/20240612_193244/state01288.pth"
+    model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20240612_193244/state01288.pth" #baseAEモデル
+    #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241022_213606/state00472.pth" #AE+TCGA17枚モデル
+    #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241031_194120/state00207.pth" #AE+TCGA約500枚、ランダムサンプリングモデル
+    #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241031_180423/state00256.pth" #baseAEのオプティマイザ変えたやつ
     net = AutoEncoder2().to(device)
     net.load_state_dict(torch.load(model_path))
     net.eval()
@@ -68,7 +74,7 @@ def main():
     )
 
     # 入力画像と再構成画像の保存
-    save_dir = "/net/nfs2/export/home/sakakibara/root/workspace/mie-pathology-repository/saikousei"
+    save_dir = "/net/nfs3/export/home/sakakibara/root/workspace/mie-pathology-repository/saikousei"
     with torch.no_grad():
         for batch, (x, _) in enumerate(valid_loader):
             x = x.to(device)
