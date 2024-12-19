@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#uniモデルでメインの学習コード
 import os
 import datetime
 from pathlib import Path
@@ -29,7 +30,7 @@ from aipatho.svs import TumorMasking
 from aipatho.utils.directory import get_cache_dir
 from aipatho.dataset import create_dataset
 
-device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     cudnn.benchmark = True
 
@@ -115,7 +116,7 @@ def print_gpu_memory_usage():
 #なんだこれ？
 def transform_image(img):
     if isinstance(img, torch.Tensor):
-        return img
+        return img.to(device)
     elif isinstance(img, np.ndarray):
         img = Image.fromarray(img)
     return transform_image(img)
@@ -124,17 +125,25 @@ def main():
     patch_size = 256, 256
     stride = 256, 256
     index = 2
-
+    
+    #三重大学のデータセットのパス
+    """
     dataset_root = get_cache_dir(
         patch=patch_size,
         stride=stride,
         target=TumorMasking.FULL
     )
+    """
+    
+    dataset_root = Path(
+        "/net/nfs3/export/home/sakakibara/data/TCGA_patch_image/" #TCGAのデータセットのパスはこっち
+    )
 
     road_root = Path("~/data/_out/mie-pathology/").expanduser()
-    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_root = Path("~/data/_out/mie-pathology/").expanduser() / (datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + "uniencoder3")
     log_root.mkdir(parents=True, exist_ok=True)
-    annotation_path = Path("_data/survival_time_cls/20220726_cls.csv").expanduser() #tvt=0(train),tvt=1(valid)すべて死亡者のデータ？
+    #annotation_path = Path("_data/survival_time_cls/20220726_cls.csv").expanduser() #tvt=0(train),tvt=1(valid)すべて死亡者のデータ？
+    annotation_path = Path("_data/survival_time_cls/TCGA_train_valid_44.csv").expanduser() #TCGAデータの場合
 
     #スルーされるはず　これ確認
     create_dataset(
@@ -193,7 +202,7 @@ def main():
     model = timm.create_model(
         "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
     )
-    model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location="cpu"), strict=True)
+    model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location=device), strict=True) #map_location="cpu"から変更
     model.eval()
     model.to(device)
 
@@ -224,6 +233,9 @@ def main():
                 nn.Dropout(0.5),
                 nn.Linear(512, 4, bias=True),
             )
+            #base_model(UNI)のパラメータを固定
+            for param in self.base_model.parameters():
+                param.requires_grad = False
 
         def forward(self, x):
             features = self.base_model(x)
@@ -261,7 +273,7 @@ def main():
     criterion1 = MeanVarianceLoss(LAMBDA_1, LAMBDA_2, START_AGE, END_AGE) #ここで止まっている
     criterion2 = nn.KLDivLoss(reduction='batchmean')
 
-    tensorboard = SummaryWriter(log_dir='./logs', filename_suffix=datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
+    tensorboard = SummaryWriter(log_dir='./logs', filename_suffix=datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))#tensorboardのログを保存するディレクトリを指定
     model_name = "{}model".format(
         datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
@@ -282,6 +294,7 @@ def main():
         train_loss_mae = 0.
         for batch, (x, soft_labels, y_true, y_class) in enumerate(train_loader):
             optimizer.zero_grad()
+            x = x.to(device) #付け加えた　必要？
             y_true, soft_labels, y_class = y_true.to(device), soft_labels.to(device), y_class.to(device)
 
             # 画像をトランスフォーム

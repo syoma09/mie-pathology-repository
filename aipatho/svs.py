@@ -423,6 +423,8 @@ class PatchSaverBase(ABC):
 class PatchSaveFull(PatchSaverBase):
     def __init__(self, path_svs: Path, path_xml: Path, index: int = 1, region: int = None):
         super().__init__(path_svs, path_xml, index, region)
+        self.index_t = 0
+        self.index_s = self.index_t - 1
 
     def is_foreground(self, x: int, y: int, w: int, h: int) -> bool:
         cropped_mask = self.mask_t.crop(box=(
