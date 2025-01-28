@@ -89,7 +89,7 @@ def create_heatmap(patchlist, attention_scores, original_width, original_height)
     heatmap = np.zeros((original_height, original_width))
     
     for (x, y), score in zip(patchlist[['x', 'y']].values, attention_scores):
-        heatmap[y:y+256, x:x+256] = score
+        heatmap[y:y+512, x:x+512] = score #本来256だが、512に変更することでヒートマップに隙間がなくなる
     
     # 正規化
     heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap))
@@ -100,7 +100,7 @@ original_width, original_height = slide.dimensions
 heatmap = create_heatmap(patchlist, attention_scores, original_width, original_height)
 
 # ヒートマップの保存
-def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='jet'):
+def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='inferno'):
     """
     ヒートマップを元画像に重ね合わせて保存。
     :param heatmap: ヒートマップ (numpy array)
@@ -118,7 +118,7 @@ def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='jet'):
     resized_heatmap = resized_heatmap.resize((resized_width, resized_height), resample=Image.BILINEAR)
     
     # カラーマップの適用
-    colored_heatmap = plt.cm.get_cmap(cmap)((np.array(resized_heatmap) / 255.0))[:, :, :3]
+    colored_heatmap = plt.colormaps[cmap]((np.array(resized_heatmap) / 255.0))[:, :, :3]
     colored_heatmap = (colored_heatmap * 255).astype(np.uint8)
     colored_heatmap = Image.fromarray(colored_heatmap)
 
@@ -130,5 +130,5 @@ def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='jet'):
     print(f"Heatmap saved to: {output_path}")
 
 # 保存先パス
-output_path = "/net/nfs3/export/home/sakakibara/data/51-4_zahyoutuki_patch/attention.png"
+output_path = "/net/nfs3/export/home/sakakibara/data/51-4_zahyoutuki_patch/attention_gomi.png"
 save_heatmap(heatmap, slide, output_path, scale_factor=0.1)  # 縮小率を変更可能

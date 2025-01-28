@@ -5,6 +5,7 @@
 # まずは三重大学のデータでクラスタリング結果し。何色が腫瘍の位置を表しているかを確認したい　一枚だけ
 # 画像に戻すためにはパッチ画像に座標を保持しておく必要性あり
 #gridrinのchatgpt ViT-L/16を使って、Attention Score を参照
+
 import os
 import torch
 import pandas as pd
@@ -24,14 +25,14 @@ def load_patchlist(patchlist_path):
     return pd.read_csv(patchlist_path)
 
 # パッチリストのパスとロード
-patchlist_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/51-4/patchlist/patchlist_updated.csv"
+patchlist_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/2-4/patchlist/patchlist_updated.csv"
 patchlist = load_patchlist(patchlist_path)
 
 # バッチサイズとワーカー数
 batch_size = 16
 num_workers = os.cpu_count() // 4
 
-# Hugging Face Hubのトークンでログイン
+# Hugging Face Hubトークンでログイン
 token = os.getenv('HUGGINGFACE_HUB_TOKEN')
 login(token)
 
@@ -59,7 +60,7 @@ transform = transforms.Compose([
 ])
 
 # スライド画像の読み込み
-slide_path = "/net/nfs3/export/dataset/morita/mie-u/orthopedic/AIPatho/svs/51-4.svs"
+slide_path = "/net/nfs3/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/2-4.svs"
 slide = openslide.OpenSlide(slide_path)
 
 # アテンションスコアの取得関数
@@ -77,7 +78,7 @@ def calculate_attention_scores(model, patchlist, transform, device):
         with torch.no_grad():
             outputs = model.forward_features(input_tensor)
             cls_attention = outputs[:, 0, :]  # CLSトークンのアテンションスコア
-            attention_scores.append(cls_attention.mean().item())
+            attention_scores.append((x, y, cls_attention.mean().item()))
     
     return attention_scores
 
@@ -88,8 +89,8 @@ attention_scores = calculate_attention_scores(model, patchlist, transform, devic
 def create_heatmap(patchlist, attention_scores, original_width, original_height):
     heatmap = np.zeros((original_height, original_width))
     
-    for (x, y), score in zip(patchlist[['x', 'y']].values, attention_scores):
-        heatmap[y:y+256, x:x+256] = score
+    for x, y, score in attention_scores:
+        heatmap[y:y+512, x:x+512] = score
     
     # 正規化
     heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap))
@@ -100,7 +101,7 @@ original_width, original_height = slide.dimensions
 heatmap = create_heatmap(patchlist, attention_scores, original_width, original_height)
 
 # ヒートマップの保存
-def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='jet'):
+def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='inferno'):
     """
     ヒートマップを元画像に重ね合わせて保存。
     :param heatmap: ヒートマップ (numpy array)
@@ -122,6 +123,10 @@ def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='jet'):
     colored_heatmap = (colored_heatmap * 255).astype(np.uint8)
     colored_heatmap = Image.fromarray(colored_heatmap)
 
+    # サイズが一致しない場合にリサイズ
+    if slide_thumbnail.size != colored_heatmap.size:
+        colored_heatmap = colored_heatmap.resize(slide_thumbnail.size, resample=Image.BILINEAR)
+
     # 元画像とヒートマップの合成
     composite_image = Image.blend(slide_thumbnail.convert("RGBA"), colored_heatmap.convert("RGBA"), alpha=0.5)
 
@@ -130,5 +135,5 @@ def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='jet'):
     print(f"Heatmap saved to: {output_path}")
 
 # 保存先パス
-output_path = "/net/nfs3/export/home/sakakibara/data/51-4_zahyoutuki_patch/attention.png"
+output_path = "/net/nfs3/export/home/sakakibara/data/2-4_attention/attention.png"
 save_heatmap(heatmap, slide, output_path, scale_factor=0.1)  # 縮小率を変更可能
