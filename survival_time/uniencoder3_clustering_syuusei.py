@@ -17,6 +17,7 @@ from sklearn.metrics import silhouette_score
 import umap
 from lifelines.utils import concordance_index
 from tqdm import tqdm
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -96,7 +97,7 @@ def extract_features(model, dataloader):
     return np.concatenate(features, axis=0), indices
 
 def visualize_clusters(features, labels, save_path):
-    reducer = umap.UMAP(n_components=2, random_state=0)
+    reducer = umap.UMAP(n_components=2, random_state=0, n_jobs=-1) #n_jobs=-1で並列処理を有効にする
     reduced_features = reducer.fit_transform(features)
 
     # クラスタごとに異なる色を使用
@@ -254,6 +255,13 @@ def main():
 
     visualize_clusters(reduced_features, pseudo_labels, os.path.join(log_root, 'kmeans_cluster_visualization.png'))#data outの方各日にちにこの次元削減した２つの画像が入っている
     visualize_clusters(reduced_features, dbscan_labels, os.path.join(log_root, 'dbscan_cluster_visualization.png'))
+    
+    # Silhouetteスコアをファイルに保存
+    output_file = os.path.join(log_root, 'silhouette_scores.txt')
+    with open(output_file, 'w') as f:
+        f.write(f"KMeans Silhouette Score: {silhouette_avg_kmeans}\n")
+        f.write(f"DBSCAN Silhouette Score: {silhouette_avg_dbscan}\n")
+    print(f"Silhouette scores saved to: {output_file}")
 
     # クラスタリング結果の保存
     result_df = pd.read_csv("/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/112-1-B/patchlist/patchlist_updated.csv")#112-1-Bは適当なサンプル,これのクラスタリング結果がここに入る
@@ -313,7 +321,7 @@ def main():
         train_loss = 0.
         train_mae = 0.
         train_index = 0.
-        for batch, (x, y_true) in enumerate(tqdm(train_loader, desc="Training")):
+        for batch, (x, y_true) in enumerate(tqdm(train_loader, desc="Training", leave=False, dynamic_ncols=True)): #leave=Falseでプログレスバーを消す
             optimizer.zero_grad()
             x = x.to(device)
             y_true = y_true.to(device)
