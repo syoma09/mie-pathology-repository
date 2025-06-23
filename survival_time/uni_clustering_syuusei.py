@@ -130,5 +130,5 @@ def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='inferno'):
     print(f"Heatmap saved to: {output_path}")
 
 # 保存先パス
-output_path = "/net/nfs3/export/home/sakakibara/data/51-4_zahyoutuki_patch/attention_gomi.png"
+output_path = "/net/nfs3/export/home/sakakibara/data/51-4_zahyoutuki_patch/attention_heatmap.png"
 save_heatmap(heatmap, slide, output_path, scale_factor=0.1)  # 縮小率を変更可能

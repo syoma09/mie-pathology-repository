@@ -43,6 +43,7 @@ def main():
     #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241022_213606/state00472.pth" #AE+TCGA17枚モデル
     #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241031_194120/state00207.pth" #AE+TCGA約500枚、ランダムサンプリングモデル
     #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241031_180423/state00256.pth" #baseAEのオプティマイザ変えたやつ
+    #model_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20250616_230800/state00099.pth" #baseAEモデル
     net = AutoEncoder2().to(device)
     net.load_state_dict(torch.load(model_path))
     net.eval()

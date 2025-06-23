@@ -91,6 +91,7 @@ def main():
     # dataset_root = Path(
     #     "/net/nfs3/export/home/sakakibara/data/TCGA_patch_image/" #TCGAのデータセット
     # )
+
     dataset_root = get_cache_dir(
         patch=patch_size,
         stride=stride,

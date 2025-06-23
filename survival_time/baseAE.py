@@ -68,9 +68,10 @@ class SSIMLoss(nn.Module):
 
 
 def main():
-    patch_size = 512, 512
-    # patch_size = 256, 256
-    stride = 512, 512
+    #patch_size = 512, 512
+    patch_size = 256, 256
+    #stride = 512, 512
+    stride = 256, 256
     target = TumorMasking.FULL
 
     dataset_root = get_cache_dir(
@@ -124,7 +125,7 @@ def main():
     """
 
     # ログ,エポック-モデルの出力ディレクトリLog, epoch-model output directory
-    epochs = 10_000
+    epochs = 10_00 #10000
     batch_size = 32     # 64 requires 19 GiB VRAM
     num_workers = os.cpu_count() // 2   # For SMT
     # # 訓練/検証のYAMLをロード　Load train/valid yaml

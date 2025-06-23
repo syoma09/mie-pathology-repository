@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 # CSVファイルの読み込み
-csv_file = '/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20250128_170057/clustered_patches.csv'
+csv_file = '/net/nfs3/export/home/sakakibara/data/_out/log_root/uniencoder3_clustering_syuusei_20250131_120005/57-10_clustered_patches.csv'
 df = pd.read_csv(csv_file)
 
 # クラスタごとの色を設定

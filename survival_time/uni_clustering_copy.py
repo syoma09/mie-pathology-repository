@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# もとはuniencoder3.py
-
-# まずは三重大学のデータでクラスタリング結果し。何色が腫瘍の位置を表しているかを確認したい　一枚だけ
-# 画像に戻すためにはパッチ画像に座標を保持しておく必要性あり
-#gridrinのchatgpt ViT-L/16を使って、Attention Score を参照
-
 import os
 import torch
 import pandas as pd
@@ -16,6 +8,9 @@ from huggingface_hub import login, hf_hub_download
 import timm
 import openslide
 from PIL import Image
+from pathlib import Path
+from datetime import datetime
+from tqdm import tqdm
 
 # デバイス設定
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -24,33 +19,25 @@ device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 def load_patchlist(patchlist_path):
     return pd.read_csv(patchlist_path)
 
-# パッチリストのパスとロード
-patchlist_path = "/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/2-4/patchlist/patchlist_updated.csv"
-patchlist = load_patchlist(patchlist_path)
+# モデルのロード関数
+def load_model():
+    token = os.getenv('HUGGINGFACE_HUB_TOKEN')
+    login(token)
 
-# バッチサイズとワーカー数
-batch_size = 16
-num_workers = os.cpu_count() // 4
+    local_dir = "../assets/ckpts/vit_large_patch16_224.dinov2.uni_mass100k/"
+    os.makedirs(local_dir, exist_ok=True)
+    model_file = hf_hub_download("MahmoodLab/UNI", filename="pytorch_model.bin", local_dir=local_dir, force_download=True)
 
-# Hugging Face Hubトークンでログイン
-token = os.getenv('HUGGINGFACE_HUB_TOKEN')
-login(token)
+    if not os.path.exists(model_file):
+        raise FileNotFoundError(f"Model file not found: {model_file}")
 
-# モデルファイルのダウンロードと確認
-local_dir = "../assets/ckpts/vit_large_patch16_224.dinov2.uni_mass100k/"
-os.makedirs(local_dir, exist_ok=True)
-model_file = hf_hub_download("MahmoodLab/UNI", filename="pytorch_model.bin", local_dir=local_dir, force_download=True)
-
-if not os.path.exists(model_file):
-    raise FileNotFoundError(f"Model file not found: {model_file}")
-
-# モデルのロード
-model = timm.create_model(
-    "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True, pretrained=False
-)
-model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location=device), strict=True)
-model.eval()
-model.to(device)
+    model = timm.create_model(
+        "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True, pretrained=False
+    )
+    model.load_state_dict(torch.load(os.path.join(local_dir, "pytorch_model.bin"), map_location=device), strict=True)
+    model.eval()
+    model.to(device)
+    return model
 
 # 前処理
 transform = transforms.Compose([
@@ -59,14 +46,10 @@ transform = transforms.Compose([
     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
 ])
 
-# スライド画像の読み込み
-slide_path = "/net/nfs3/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/2-4.svs"
-slide = openslide.OpenSlide(slide_path)
-
 # アテンションスコアの取得関数
 def calculate_attention_scores(model, patchlist, transform, device):
     attention_scores = []
-    for _, row in patchlist.iterrows():
+    for _, row in tqdm(patchlist.iterrows(), total=len(patchlist), desc="Calculating attention scores"):
         img_path = row['path']
         x, y = row['x'], row['y']
         
@@ -82,58 +65,94 @@ def calculate_attention_scores(model, patchlist, transform, device):
     
     return attention_scores
 
-# アテンションスコアの計算
-attention_scores = calculate_attention_scores(model, patchlist, transform, device)
-
 # ヒートマップの作成
 def create_heatmap(patchlist, attention_scores, original_width, original_height):
     heatmap = np.zeros((original_height, original_width))
+    mask = np.zeros((original_height, original_width), dtype=bool)
     
     for x, y, score in attention_scores:
         heatmap[y:y+512, x:x+512] = score
+        mask[y:y+512, x:x+512] = True
     
     # 正規化
     heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap))
-    return heatmap
-
-# 元画像サイズに合わせたヒートマップ生成
-original_width, original_height = slide.dimensions
-heatmap = create_heatmap(patchlist, attention_scores, original_width, original_height)
+    return heatmap, mask
 
 # ヒートマップの保存
-def save_heatmap(heatmap, slide, output_path, scale_factor=0.1, cmap='inferno'):
-    """
-    ヒートマップを元画像に重ね合わせて保存。
-    :param heatmap: ヒートマップ (numpy array)
-    :param slide: OpenSlideオブジェクト
-    :param output_path: 保存先のファイルパス
-    :param scale_factor: 縮小率（0.1なら10分の1）
-    :param cmap: カラーマップ
-    """
-    # 元画像の縮小
+def save_heatmap(heatmap, mask, slide, output_path, scale_factor=0.1, cmap='inferno'):
     resized_width, resized_height = int(slide.dimensions[0] * scale_factor), int(slide.dimensions[1] * scale_factor)
     slide_thumbnail = slide.get_thumbnail((resized_width, resized_height))
 
-    # ヒートマップの縮小
     resized_heatmap = Image.fromarray((heatmap * 255).astype(np.uint8))
     resized_heatmap = resized_heatmap.resize((resized_width, resized_height), resample=Image.BILINEAR)
     
-    # カラーマップの適用
     colored_heatmap = plt.cm.get_cmap(cmap)((np.array(resized_heatmap) / 255.0))[:, :, :3]
     colored_heatmap = (colored_heatmap * 255).astype(np.uint8)
     colored_heatmap = Image.fromarray(colored_heatmap)
 
-    # サイズが一致しない場合にリサイズ
     if slide_thumbnail.size != colored_heatmap.size:
         colored_heatmap = colored_heatmap.resize(slide_thumbnail.size, resample=Image.BILINEAR)
 
-    # 元画像とヒートマップの合成
-    composite_image = Image.blend(slide_thumbnail.convert("RGBA"), colored_heatmap.convert("RGBA"), alpha=0.5)
+    # マスクを適用して、パッチ画像がない部分は元の画像の色のままにする
+    composite_image = Image.new("RGBA", slide_thumbnail.size)
+    for y in range(slide_thumbnail.size[1]):
+        for x in range(slide_thumbnail.size[0]):
+            if mask[int(y / scale_factor), int(x / scale_factor)]:
+                composite_image.putpixel((x, y), colored_heatmap.getpixel((x, y)))
+            else:
+                composite_image.putpixel((x, y), slide_thumbnail.getpixel((x, y)))
 
-    # 保存
     composite_image.save(output_path)
     print(f"Heatmap saved to: {output_path}")
 
-# 保存先パス
-output_path = "/net/nfs3/export/home/sakakibara/data/2-4_attention/attention.png"
-save_heatmap(heatmap, slide, output_path, scale_factor=0.1)  # 縮小率を変更可能
+def process_svs_files(src_dir, dst_dir):
+    # src_dir内のすべてのsvsファイルを取得
+    svs_files = list(Path(src_dir).rglob("*.svs"))
+
+    model = load_model()
+
+    for svs_file in tqdm(svs_files, desc="Processing SVS files"):
+        # svsファイルのファイル名（拡張子なし）を取得
+        file_stem = svs_file.stem
+
+        # 保存先ディレクトリを作成
+        save_dir = Path(dst_dir) / file_stem
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        # attention.pngの保存先パスを設定
+        save_path = save_dir / "attention.png"
+
+        # スライド画像の読み込み
+        slide = openslide.OpenSlide(str(svs_file))
+
+        # パッチリストのパスとロード
+        patchlist_path = f"/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/{file_stem}/patchlist/patchlist_updated.csv"
+        if not os.path.exists(patchlist_path):
+            print(f"Patchlist not found for {file_stem}, skipping...")
+            continue
+        patchlist = load_patchlist(patchlist_path)
+
+        # アテンションスコアの計算
+        attention_scores = calculate_attention_scores(model, patchlist, transform, device)
+
+        # 元画像サイズに合わせたヒートマップ生成
+        original_width, original_height = slide.dimensions
+        heatmap, mask = create_heatmap(patchlist, attention_scores, original_width, original_height)
+
+        # ヒートマップの保存
+        save_heatmap(heatmap, mask, slide, save_path, scale_factor=0.1)
+
+def update_patchlist_paths(patchlist_path, updated_patchlist_path):
+    df = pd.read_csv(patchlist_path)
+    df['path'] = df['path'].str.replace('/net/nfs2/', '/net/nfs3/')
+    df.to_csv(updated_patchlist_path, index=False)
+    print(f"Updated patchlist saved to: {updated_patchlist_path}")
+
+def main():
+    src_dir = "/net/nfs3/export/dataset/morita/mie-u/orthopedic/AIPatho/layer12/"
+    dst_dir = "/net/nfs3/export/home/sakakibara/data/attention_heatmap/"
+
+    process_svs_files(src_dir, dst_dir)
+
+if __name__ == '__main__':
+    main()

@@ -13,3 +13,6 @@ events.out.tfevents.*
 graph/*.jpg
 *.png
 *.pdf
+
+*.pt
+*.pth

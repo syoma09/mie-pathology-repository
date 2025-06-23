@@ -1,6 +1,7 @@
 #クラスタリングを行い自己教師あり学習を行うコード　ラベル付→再学習
 import os
 import datetime
+from datetime import datetime
 from pathlib import Path
 import random
 import torch
@@ -114,6 +115,26 @@ def visualize_clusters(features, labels, save_path):
     plt.savefig(save_path)
     plt.close()
 
+def visualize_clusters_3d(features, labels, save_path): #3Dの可視化
+    reducer = umap.UMAP(n_components=3, random_state=0, n_jobs=-1)
+    reduced_features = reducer.fit_transform(features)
+
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+    unique_labels = np.unique(labels)
+    colors = plt.cm.get_cmap('tab10', len(unique_labels))
+
+    for label in unique_labels:
+        mask = labels == label
+        ax.scatter(reduced_features[mask, 0], reduced_features[mask, 1], reduced_features[mask, 2], 
+                   color=colors(label), label=f'Cluster {label}', alpha=0.5)
+
+    ax.legend()
+    ax.set_title('3D UMAP visualization of clustered features')
+    plt.savefig(save_path)
+    plt.show()
+
 def main():
     patch_size = 256, 256
     stride = 256, 256
@@ -126,8 +147,17 @@ def main():
     )
 
     road_root = Path("~/data/_out/mie-pathology/").expanduser()
-    log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    #log_rootは以下に変更
+    # log_root = Path("~/data/_out/mie-pathology/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # log_root = Path("~/data/_out/log_root/").expanduser() / datetime.datetime.now().strftime('%Y%m%d_%H%M%S') #log_rootのパスを変更
+    # log_root.mkdir(parents=True, exist_ok=True)
+    
+    # 実行IDとしてタイムスタンプを取得、実行ファイル名も取得
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S") # 実行IDとしてタイムスタンプを取得
+    script_name = Path(__file__).stem  # 実行時のファイル名を取得
+    log_root = Path("~/data/_out/log_root/").expanduser() / f"{script_name}_{run_id}"
     log_root.mkdir(parents=True, exist_ok=True)
+
     annotation_path = Path("_data/survival_time_cls/20220726_cls.csv").expanduser()
 
     create_dataset(
@@ -223,54 +253,90 @@ def main():
 
     criterion = nn.MSELoss()  # 回帰タスクのためMSELossを使用
 
-    tensorboard = SummaryWriter(log_dir='./logs', filename_suffix=datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
+    tensorboard = SummaryWriter(log_dir='./logs', filename_suffix=datetime.now().strftime('%Y%m%d_%H%M%S'))
     model_name = "{}model".format(
-        datetime.datetime.now().strftime('%Y%m%d_%H%M%S'),
+        datetime.now().strftime('%Y%m%d_%H%M%S'),
     )
 
     scaler = torch.cuda.amp.GradScaler()
 
     # 特徴抽出フェーズ
-    print("Extracting features...")
+    print("特徴抽出...")
     features, indices = extract_features(model, train_loader)
     print(f"Features shape: {features.shape}")
 
-    # 特徴量の次元削減
+    #特徴量の次元削減 (UMAP) →なしでやってみる 1024次元のまま
     reducer = umap.UMAP(n_components=50, random_state=0)
     reduced_features = reducer.fit_transform(features)
+    # reduced_features = features
 
     # クラスタリングフェーズ
-    print("Clustering features...")
+    print("クラスタリング...")
     # KMeansクラスタリング
-    kmeans = KMeans(n_clusters=10, random_state=0).fit(reduced_features)
+    kmeans = KMeans(n_clusters=10, random_state=0).fit(reduced_features) #n_clustersはクラスタ数　10から変更する
     pseudo_labels = kmeans.labels_
     silhouette_avg = silhouette_score(reduced_features, pseudo_labels)
-    print(f"Silhouette Score: {silhouette_avg}")
+    print(f"Kmeansシルエットスコア: {silhouette_avg}")
 
     # DBSCANクラスタリング
     dbscan = DBSCAN(eps=0.5, min_samples=5).fit(reduced_features)
     dbscan_labels = dbscan.labels_
     dbscan_silhouette_avg = silhouette_score(reduced_features, dbscan_labels)
-    print(f"DBSCAN Silhouette Score: {dbscan_silhouette_avg}")
+    print(f"DBSCANシルエットスコア: {dbscan_silhouette_avg}")
 
+    #二次元可視化
     visualize_clusters(reduced_features, pseudo_labels, os.path.join(log_root, 'kmeans_cluster_visualization.png'))#data outの方各日にちにこの次元削減した２つの画像が入っている
     visualize_clusters(reduced_features, dbscan_labels, os.path.join(log_root, 'dbscan_cluster_visualization.png'))
     
     # Silhouetteスコアをファイルに保存
     output_file = os.path.join(log_root, 'silhouette_scores.txt')
     with open(output_file, 'w') as f:
-        f.write(f"KMeans Silhouette Score: {silhouette_avg_kmeans}\n")
-        f.write(f"DBSCAN Silhouette Score: {silhouette_avg_dbscan}\n")
+        f.write(f"KMeans Silhouette Score: {silhouette_avg}\n")
+        f.write(f"DBSCAN Silhouette Score: {dbscan_silhouette_avg}\n")
     print(f"Silhouette scores saved to: {output_file}")
 
-    # クラスタリング結果の保存
-    result_df = pd.read_csv("/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/112-1-B/patchlist/patchlist_updated.csv")#112-1-Bは適当なサンプル,これのクラスタリング結果がここに入る
-    result_df['kmeans_cluster'] = 0
-    result_df['dbscan_cluster'] = 0
-    for idx, (kmeans_label, dbscan_label) in zip(indices, zip(pseudo_labels, dbscan_labels)):
-        result_df.at[idx, 'kmeans_cluster'] = kmeans_label
-        result_df.at[idx, 'dbscan_cluster'] = dbscan_label
-    result_df.to_csv(os.path.join(log_root, 'clustered_patches.csv'), index=False)
+    # 患者番号のリストを取得
+    patients_df = pd.read_csv("_data/survival_time_cls/20220726_cls.csv")
+    patient_numbers = patients_df['number'].astype(str).tolist()
+
+    # 各患者のクラスタリング結果を保存
+    for patient_number in patient_numbers:
+        patchlist_path = f"/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/{patient_number}/patchlist/patchlist_updated.csv"
+        if os.path.exists(patchlist_path):
+            result_df = pd.read_csv(patchlist_path)
+            result_df['kmeans_cluster'] = np.nan
+            result_df['dbscan_cluster'] = np.nan
+            for idx, (kmeans_label, dbscan_label) in zip(indices, zip(pseudo_labels, dbscan_labels)):
+                if idx < len(result_df):
+                    result_df.at[idx, 'kmeans_cluster'] = kmeans_label
+                    result_df.at[idx, 'dbscan_cluster'] = dbscan_label
+            result_df.to_csv(os.path.join(log_root, f'{patient_number}_clustered_patches.csv'), index=False)
+            print(f"Clustered patches saved for patient {patient_number}")
+
+            
+     # 特定の患者番号を指定
+    target_patient_number = patient_numbers[0]  # 最初の患者番号を使用（任意の患者番号に変更可能）
+
+    # 特定の患者のデータを抽出
+    patchlist_path = f"/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/{target_patient_number}/patchlist/patchlist_updated.csv"
+    if os.path.exists(patchlist_path):
+        result_df = pd.read_csv(patchlist_path)
+        result_df['kmeans_cluster'] = 0
+        result_df['dbscan_cluster'] = 0
+        for idx, (kmeans_label, dbscan_label) in zip(indices, zip(pseudo_labels, dbscan_labels)):
+            result_df.at[idx, 'kmeans_cluster'] = kmeans_label
+            result_df.at[idx, 'dbscan_cluster'] = dbscan_label
+        result_df.to_csv(os.path.join(log_root, f'{target_patient_number}_clustered_patches.csv'), index=False)
+        print(f"Clustered patches saved for patient {target_patient_number}")
+
+        # 特定の患者のデータを使用してUMAPによる可視化を行う
+        patient_features = features[result_df.index]
+        patient_labels = pseudo_labels[result_df.index]
+        visualize_clusters_3d(patient_features, patient_labels, os.path.join(log_root, f'{target_patient_number}_kmeans_cluster_visualization_3d.png'))
+        patient_labels = dbscan_labels[result_df.index]
+        visualize_clusters_3d(patient_features, patient_labels, os.path.join(log_root, f'{target_patient_number}_dbscan_cluster_visualization_3d.png'))
+    
+    ###今やるべき課題はここまで　この下はそのあと ↑3dじゃなくて普通に可視化してみる　ミスりそう
 
     # 擬似ラベルを使用してデータセットを再構築
     class PseudoLabelDataset(torch.utils.data.Dataset):
@@ -351,13 +417,15 @@ def main():
             train_loss += loss.item() / len(train_loader)
             train_mae += mae / len(train_loader)
             train_index += index / len(train_loader)
+            
+            print(f"\r  Batch({batch:6}/{len(train_loader):6})[{'=' * (30 * batch // len(train_loader)) + ' ' * 30}]: loss={loss.item():.4} {mae:.3}", end="")
 
-            print("\r  Batch({:6}/{:6})[{}]: loss={:.4}".format(
-                batch, len(train_loader),
-                ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
-                loss.item()
-            ), end="")
-            print(f" {mae:.3}", end="")
+            # print("\r  Batch({:6}/{:6})[{}]: loss={:.4}".format(
+            #     batch, len(train_loader),
+            #     ('=' * (30 * batch // len(train_loader)) + " " * 30)[:30],
+            #     loss.item()
+            # ), end="")
+            # print(f" {mae:.3}", end="")
 
         print("    train MV: {:3.3}".format(train_loss))
         print('')

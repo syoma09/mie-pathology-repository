@@ -19,6 +19,7 @@ import timm
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 
+from aipatho.model.autoencoder2  import AutoEncoder2
 from aipatho.dataset import load_annotation
 from create_soft_labels import estimate_value, create_softlabel_survival_time_wise
 from aipatho.svs import TumorMasking
@@ -141,49 +142,41 @@ def main():
         target=TumorMasking.FULL
     )
     
-    # TCGAのデータセットの場合
-    """
-    dataset_root = Path(
-        "/net/nfs3/export/home/sakakibara/data/TCGA_patch_image/" # TCGAのデータセットのパスはこっち
-    )
-    """
-    
     # 三重大学のデータ
     annotation_path = Path("_data/survival_time_cls/20220726_cls.csv").expanduser()
-    # TCGAのデータ
-    # annotation_path = Path("_data/survival_time_cls/TCGA_train_valid_44.csv").expanduser()
     annotation = load_annotation(annotation_path)
 
     batch_size = 16
     num_workers = os.cpu_count() // 4
 
-    # トレーニングデータローダー
-    # train_loader = torch.utils.data.DataLoader(
-    #     PatchDataset(dataset_root, annotation['train'], flag=1), batch_size=batch_size,
-    #     num_workers=num_workers, drop_last=True
-    # )
-
-    # 検証データローダー（コメントアウト）
+    # 検証データローダー
     valid_loader = torch.utils.data.DataLoader(
-         PatchDataset(dataset_root, annotation['valid'], flag=1), batch_size=batch_size,
-         num_workers=num_workers, drop_last=True
-     )
-
-    # モデルの準備
-    base_model = timm.create_model(
-        "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=0, dynamic_img_size=True
+        PatchDataset(dataset_root, annotation['valid'], flag=1), batch_size=batch_size,
+        num_workers=num_workers, drop_last=True
     )
-    base_model.eval()
-    base_model.to(device)
 
-    model = CustomModel(base_model)
-    # TCGAで学習したモデル
-    # model.load_state_dict(torch.load("/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241114_145205uniencoder3/model00046.pth", map_location="cpu"), strict=True)
-    # 三重大学で学習したモデル
-    model.load_state_dict(torch.load("/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/20241008_180320/model00368.pth", map_location="cpu"), strict=True)
-    
-    model = model.to(device)
-    model.eval()
+    # モデルの準備（Auto Encoder）
+    base_model = AutoEncoder2()
+    base_model.load_state_dict(torch.load(
+        '/net/nfs3/export/home/sakakibara/data/_out/mie-pathology/model00936.pth/state00994.pth', map_location=device
+    ))
+
+    # デコーダ部分を再定義
+    base_model.dec = nn.Sequential(
+        #nn.Flatten(),
+        nn.Linear(512, 512, bias=True),
+        nn.BatchNorm1d(512),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(512, 512, bias=True),
+        nn.BatchNorm1d(512),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(512, 4, bias=True),
+    )
+
+    base_model = base_model.to(device)
+    base_model.eval()
 
     transform = transforms.Compose([
         transforms.Resize(224),
@@ -192,21 +185,18 @@ def main():
     ])
     
     logging.info("トレーニングデータの予測を開始します")
-    # logging.info("バリデーションデータの予測を開始します")
-    # トレーニングデータを使用して予測を行う
-    scaler = torch.cuda.amp.GradScaler()  # Mixed Precision用のスケーラー
     total_batches = len(valid_loader)
     with torch.no_grad():
         patient_predictions = defaultdict(list)
         patient_true_labels = {}
-        for batch, (x, soft_labels, y_true, y_class, subjects) in enumerate(valid_loader): # train_loaderを使用（valid_loaderに変更）
+        for batch, (x, soft_labels, y_true, y_class, subjects) in enumerate(valid_loader):
             logging.info(f"バッチ {batch + 1}/{total_batches}を処理中")
             x, y_true = x.to(device), y_true.to(device)
             x = [transform(img) if isinstance(img, (Image.Image, np.ndarray)) else img for img in x]
             x = torch.stack([transform_image(img) for img in x]).to(device)
 
             with torch.cuda.amp.autocast():  # Mixed Precisionの自動キャスト
-                outputs = model(x)
+                outputs = base_model(x)
                 y_pred = estimate_value(outputs)
                 y_pred = np.squeeze(y_pred)
 
@@ -214,7 +204,6 @@ def main():
                 patient_predictions[subject].append(y_pred[i].item())
                 if subject not in patient_true_labels:
                     patient_true_labels[subject] = y_true[i].item()
-
 
     # 患者ごとの生存期間を算出（平均を使用）
     patient_avg_predictions = {subject: np.mean(preds) for subject, preds in patient_predictions.items()}
